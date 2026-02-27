@@ -17,18 +17,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
+import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
+import { collection } from "firebase/firestore";
 
 
-interface ConfigStatusListProps {
-  configs: FormConfig[];
-}
+export function ConfigStatusList() {
+  const firestore = useFirestore();
 
-export function ConfigStatusList({ configs: allConfigs }: ConfigStatusListProps) {
+  const formConfigsQuery = useMemoFirebase(() => {
+    return collection(firestore, 'form_configurations');
+  }, [firestore]);
+
+  const { data: allConfigs, isLoading } = useCollection<FormConfig>(formConfigsQuery);
 
   const configs = useMemo(() => {
+    if (!allConfigs) return [];
+
     const configsByCategoryName: Record<string, FormConfig> = {};
     allConfigs.forEach(c => {
       configsByCategoryName[c.categoryName] = c;
@@ -63,7 +70,15 @@ export function ConfigStatusList({ configs: allConfigs }: ConfigStatusListProps)
 
   }, [allConfigs]);
 
-  if (configs.length === 0) {
+  if (isLoading) {
+    return (
+        <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+    )
+  }
+
+  if (!allConfigs || configs.length === 0) {
     return null;
   }
 

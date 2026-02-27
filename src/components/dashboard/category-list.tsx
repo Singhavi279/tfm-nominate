@@ -5,20 +5,25 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/componen
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useMemo } from "react";
-import { ArrowRight, FileText } from "lucide-react";
+import { ArrowRight, FileText, Loader2 } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
-import { useUser } from "@/firebase";
+import { useUser, useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { ADMIN_EMAIL } from "@/lib/auth";
+import { collection } from "firebase/firestore";
 
-interface CategoryListProps {
-  configs: FormConfig[];
-}
-
-export function CategoryList({ configs }: CategoryListProps) {
+export function CategoryList() {
   const { user } = useUser();
   const isAdmin = user?.email === ADMIN_EMAIL;
+  const firestore = useFirestore();
+
+  const formConfigsQuery = useMemoFirebase(() => {
+    return collection(firestore, 'form_configurations');
+  }, [firestore]);
+  const { data: configs, isLoading } = useCollection<FormConfig>(formConfigsQuery);
 
   const segments = useMemo(() => {
+    if (!configs) return [];
+
     const groupedBySegment = configs.reduce((acc, config) => {
       const segment = config.segmentName || "Uncategorized";
       if (!acc[segment]) {
@@ -55,7 +60,15 @@ export function CategoryList({ configs }: CategoryListProps) {
     return orderedSegments;
   }, [configs]);
 
-  if (configs.length === 0) {
+  if (isLoading) {
+    return (
+        <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+    );
+  }
+
+  if (!configs || configs.length === 0) {
     return (
       <Card className="text-center py-12 bg-secondary/50 border-dashed">
         <CardHeader>
