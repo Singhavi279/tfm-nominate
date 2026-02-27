@@ -7,12 +7,17 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { ArrowRight, FileText } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
+import { useUser } from "@/firebase";
+import { ADMIN_EMAIL } from "@/lib/auth";
 
 interface CategoryListProps {
   configs: FormConfig[];
 }
 
 export function CategoryList({ configs }: CategoryListProps) {
+  const { user } = useUser();
+  const isAdmin = user?.email === ADMIN_EMAIL;
+
   const segments = useMemo(() => {
     const groupedBySegment = configs.reduce((acc, config) => {
       const segment = config.segmentName || "Uncategorized";
@@ -61,9 +66,11 @@ export function CategoryList({ configs }: CategoryListProps) {
           <CardContent className="text-muted-foreground">An administrator needs to add nomination categories first.</CardContent>
         </CardHeader>
         <CardContent>
-          <Button asChild>
-            <Link href="/admin/upload">Go to Admin Uploader</Link>
-          </Button>
+          {isAdmin && (
+            <Button asChild>
+              <Link href="/admin/upload">Go to Admin Uploader</Link>
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

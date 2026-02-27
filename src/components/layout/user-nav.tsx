@@ -16,11 +16,13 @@ import { signOut } from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, LayoutDashboard, CloudUpload } from "lucide-react";
+import { ADMIN_EMAIL } from "@/lib/auth";
 
 export function UserNav() {
   const { user } = useUser();
   const auth = useAuth();
   const router = useRouter();
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   const handleSignOut = async () => {
     await signOut(auth);
@@ -69,12 +71,14 @@ export function UserNav() {
               <span>Dashboard</span>
             </DropdownMenuItem>
           </Link>
-          <Link href="/admin/upload">
-            <DropdownMenuItem>
-              <CloudUpload className="mr-2 h-4 w-4" />
-              <span>Admin Uploader</span>
-            </DropdownMenuItem>
-          </Link>
+          {isAdmin && (
+            <Link href="/admin/upload">
+              <DropdownMenuItem>
+                <CloudUpload className="mr-2 h-4 w-4" />
+                <span>Admin Uploader</span>
+              </DropdownMenuItem>
+            </Link>
+          )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut}>
