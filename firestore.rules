@@ -75,11 +75,16 @@ service cloud.firestore {
     /**
      * Validates that an update to a draft is performed by the owner and that the 'userId'
      * field remains unchanged, preventing ownership transfer.
+     * Also handles creation via set-merge by checking if the resource exists.
      */
-    function isUpdatingOwnDraft(userId) {
-      // The `resource != null` check is implicit in using `resource.data`
-      return isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+    function canWriteDraft(userId) {
+      return isOwner(userId) && 
+             // On create (resource is null), check integrity of new data.
+             (resource == null && request.resource.data.userId == userId) ||
+             // On update (resource exists), ensure ownership isn't being changed.
+             (resource != null && request.resource.data.userId == resource.data.userId);
     }
+
 
     /**
      * Validates that the user is the owner and that the submission being created contains a 'userId'
@@ -135,7 +140,7 @@ service cloud.firestore {
     match /users/{userId}/drafts/{formConfigurationId} {
       allow get, list: if isOwner(userId);
       allow create: if isCreatingOwnDraft(userId);
-      allow update: if isUpdatingOwnDraft(userId);
+      allow update: if canWriteDraft(userId);
       allow delete: if isExistingOwner(userId);
     }
 
