@@ -1,0 +1,21 @@
+rules_version = '2';
+
+// Craft rules based on data in your Firestore database
+// allow write: if firestore.get(
+//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Allow users to upload to their own submissions folder
+    // e.g. submissions/vU2fS3oYeKTUClcP3sxv12bXhyo1/...
+    match /submissions/{userId}/{formId}/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Allow creation/updates if the user is authenticated and matches the userId directory
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Admins could potentially have broader access, but for now this restricts to users.
+    // Replace with a more sophisticated admin check if needed.
+    // e.g., allow read: if request.auth != null && request.auth.token.email == "t20avnish@gmail.com";
+  }
+}
