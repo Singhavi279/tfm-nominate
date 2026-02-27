@@ -24,10 +24,11 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { saveFormConfig } from "@/lib/actions";
-import { FormConfig } from "@/lib/types";
+import { FormConfig, FormConfigSchema } from "@/lib/types";
 import { Loader2, Save } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
+import { useFirestore, errorEmitter, FirestorePermissionError } from "@/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 const formSchema = z.object({
   segmentName: z.string({ required_error: "Please select a segment." }),
@@ -38,7 +39,6 @@ const formSchema = z.object({
   sectionsJson: z.string().refine((val) => {
       try {
         const parsed = JSON.parse(val);
-        // Add more validation if needed, e.g. checking if it's an array
         return Array.isArray(parsed);
       } catch (e) {
         return false;
@@ -49,6 +49,7 @@ const formSchema = z.object({
 export function FormUploader() {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const firestore = useFirestore();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -86,25 +87,47 @@ export function FormUploader() {
       sections: sections,
     };
 
+    let validatedConfig;
     try {
-      const result = await saveFormConfig(newConfig);
-      if (result.error) {
-        throw new Error(result.error);
-      }
-      toast({
-        title: "Success!",
-        description: `Form configuration "${result.id}" has been saved.`,
-      });
-      form.reset({ description: "", sectionsJson: "[]", segmentName: undefined, categoryName: undefined });
-    } catch (error: any) {
-      toast({
-        title: "Save Failed",
-        description: error.message || "Could not save the form configuration.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
+        validatedConfig = FormConfigSchema.parse(newConfig);
+    } catch (e: any) {
+        toast({
+            title: "Validation Error",
+            description: e.message || "Invalid form configuration data.",
+            variant: "destructive",
+        });
+        setSaving(false);
+        return;
     }
+
+    const docRef = doc(firestore, "form_configurations", validatedConfig.id);
+    
+    // Using .then().catch() to handle client-side write
+    setDoc(docRef, validatedConfig)
+        .then(() => {
+            toast({
+                title: "Success!",
+                description: `Form configuration "${validatedConfig.id}" has been saved.`,
+            });
+            form.reset({ description: "", sectionsJson: "[]", segmentName: undefined, categoryName: undefined });
+        })
+        .catch((error: any) => {
+            const permissionError = new FirestorePermissionError({
+                path: docRef.path,
+                operation: 'write',
+                requestResourceData: validatedConfig
+            });
+            errorEmitter.emit('permission-error', permissionError);
+            
+            toast({
+                title: "Save Failed",
+                description: error.message || "Permission denied. Ensure you have administrator rights.",
+                variant: "destructive",
+            });
+        })
+        .finally(() => {
+            setSaving(false);
+        });
   }
 
   return (
