@@ -5,9 +5,11 @@ import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useDebounce } from "@/hooks/use-debounce";
-import { useUser } from "@/firebase";
-import { getDraft, saveDraft, submitNomination } from "@/lib/actions";
-import { FormConfig, Question } from "@/lib/types";
+import { useUser, useDoc, useFirestore, useMemoFirebase, FirestorePermissionError, errorEmitter } from "@/firebase";
+import { doc, setDoc, serverTimestamp, writeBatch, collection, deleteDoc } from "firebase/firestore";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+
+import { FormConfig, Question, Draft } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuestionRenderer } from "./question-renderer";
@@ -26,6 +28,7 @@ type FileStore = { [key: string]: File };
 
 export function NominationForm({ formConfig }: NominationFormProps) {
   const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
   const { toast } = useToast();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -33,7 +36,13 @@ export function NominationForm({ formConfig }: NominationFormProps) {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [files, setFiles] = useState<FileStore>({});
   const [declaration, setDeclaration] = useState(false);
-  const [isLoadingDraft, setIsLoadingDraft] = useState(true);
+
+  const draftRef = useMemoFirebase(() => {
+      if (!user || !firestore) return null;
+      return doc(firestore, 'users', user.uid, 'drafts', formConfig.id);
+  }, [user, firestore, formConfig.id]);
+
+  const { data: draft, isLoading: isLoadingDraft } = useDoc<Draft>(draftRef);
 
   const validationSchema = z.object(
     formConfig.sections.reduce((acc, section) => {
@@ -57,41 +66,58 @@ export function NominationForm({ formConfig }: NominationFormProps) {
     defaultValues: {},
   });
 
-  // Fetch draft when user is available
+  // Load draft data into form when it's fetched
   useEffect(() => {
-    async function fetchDraft() {
-      if (user) {
-        setIsLoadingDraft(true);
-        const draft = await getDraft(user.uid, formConfig.id);
-        if (draft) {
-          methods.reset(draft.responses);
-          setLastSaved(draft.updatedAt);
+    if (draft && !methods.formState.isDirty) { // Only reset if form is not dirty
+      let responses = {};
+      try {
+        if (draft.formData) {
+            responses = JSON.parse(draft.formData);
         }
-        setIsLoadingDraft(false);
+      } catch (e) {
+        console.error("Failed to parse draft formData:", e);
+      }
+      methods.reset(responses);
+      if (draft.lastSavedAt) {
+          // The `useDoc` hook returns a Firestore Timestamp. Convert it to ISO string for display.
+          setLastSaved((draft.lastSavedAt as any).toDate().toISOString());
       }
     }
-    if (!isUserLoading) {
-        fetchDraft();
-    }
-  }, [user, isUserLoading, formConfig.id, methods]);
+  }, [draft, methods]);
 
 
   const watchedValues = methods.watch();
   const debouncedValues = useDebounce(watchedValues, 1500);
 
   useEffect(() => {
-    if (!user || !methods.formState.isDirty || isPending || isLoadingDraft) return;
+    if (!user || !firestore || !methods.formState.isDirty || isPending || isLoadingDraft) return;
 
     const responsesToSave = { ...debouncedValues };
 
-    startTransition(async () => {
-      const result = await saveDraft(user.uid, formConfig.id, responsesToSave);
-      if (result.success && result.updatedAt) {
-        setLastSaved(result.updatedAt);
-        methods.formState.isDirty = false;
-      }
+    startTransition(() => {
+        const docRef = doc(firestore, "users", user.uid, "drafts", formConfig.id);
+        const draftData = {
+          userId: user.uid,
+          formConfigurationId: formConfig.id,
+          formData: JSON.stringify(responsesToSave),
+          lastSavedAt: serverTimestamp(),
+        };
+
+        setDoc(docRef, draftData, { merge: true })
+          .then(() => {
+              setLastSaved(new Date().toISOString());
+              methods.formState.isDirty = false;
+          })
+          .catch((error) => {
+              const permissionError = new FirestorePermissionError({
+                  path: docRef.path,
+                  operation: 'write',
+                  requestResourceData: draftData,
+              });
+              errorEmitter.emit('permission-error', permissionError);
+          });
     });
-  }, [debouncedValues, user, formConfig.id, methods.formState, isPending, isLoadingDraft]);
+  }, [debouncedValues, user, formConfig.id, methods, isPending, isLoadingDraft, firestore]);
 
   const handleFileChange = (questionId: string, file: File | null) => {
     setFiles(prev => {
@@ -106,7 +132,7 @@ export function NominationForm({ formConfig }: NominationFormProps) {
   }
 
   const onSubmit = async (data: any) => {
-    if (!user) return;
+    if (!user || !firestore) return;
     setIsSubmitting(true);
 
     let allRequiredFilesUploaded = true;
@@ -138,28 +164,63 @@ export function NominationForm({ formConfig }: NominationFormProps) {
       return;
     }
     
-    // Convert files to a format that can be passed to server action
-    const formData = new FormData();
-    Object.entries(files).forEach(([key, file]) => {
-        formData.append(key, file);
-    });
-
     try {
-        const result = await submitNomination(user.uid, formConfig.id, data, files);
-        if (result.error) {
-            throw new Error(result.error);
+        const attachmentUrls: { [key: string]: string } = {};
+        const storage = getStorage();
+
+        // 1. Upload files to Cloud Storage
+        for (const questionId in files) {
+          const file = files[questionId];
+          if (file) {
+            const sRef = storageRef(storage, `submissions/${user.uid}/${formConfig.id}/${Date.now()}_${file.name}`);
+            const snapshot = await uploadBytes(sRef, file);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            attachmentUrls[questionId] = downloadURL;
+          }
         }
+
+        const batch = writeBatch(firestore);
+
+        const submissionData = {
+          userId: user.uid,
+          formConfigurationId: formConfig.id,
+          submittedAt: serverTimestamp(),
+          responses: JSON.stringify(data),
+          attachments: JSON.stringify(attachmentUrls),
+        };
+
+        // 2. Create submission document
+        const submissionRef = doc(collection(firestore, "users", user.uid, "submissions"));
+        batch.set(submissionRef, submissionData);
+        
+        // 3. Delete draft document
+        const draftRef = doc(firestore, "users", user.uid, "drafts", formConfig.id);
+        batch.delete(draftRef);
+
+        // 4. Commit batch write
+        await batch.commit();
+
         toast({
             title: "Submission Successful!",
             description: "Your nomination has been submitted.",
         });
         router.push(`/nominate/${formConfig.id}/success`);
+
     } catch (error: any) {
-        toast({
-            title: "Submission Failed",
-            description: error.message,
-            variant: "destructive"
-        })
+        if (error.code && error.code.startsWith('storage/')) {
+            toast({
+                title: "File Upload Failed",
+                description: error.message,
+                variant: "destructive"
+            });
+        } else {
+            const permissionError = new FirestorePermissionError({
+                path: `users/${user.uid}/submissions`,
+                operation: 'create',
+                requestResourceData: "Batch Write on Nomination Submission"
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        }
     } finally {
         setIsSubmitting(false);
     }
@@ -225,8 +286,8 @@ export function NominationForm({ formConfig }: NominationFormProps) {
                 "Your changes will be saved automatically."
             )}
           </div>
-          <Button type="submit" size="lg" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Button type="submit" size="lg" disabled={isSubmitting || isPending}>
+            {(isSubmitting || isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Submit Nomination
           </Button>
         </div>

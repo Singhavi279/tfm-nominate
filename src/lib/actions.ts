@@ -1,28 +1,19 @@
 "use server";
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, serverTimestamp, deleteDoc, Timestamp, writeBatch } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs } from "firebase/firestore";
 import { firebaseConfig } from "@/firebase/config";
 
 import {
   generateFormConfig,
 } from "@/ai/flows/generate-form-config";
 import { assistNominationText, AssistNominationTextInput } from "@/ai/flows/assist-nomination-text";
-import { FormConfig, FormConfigSchema, Draft } from "@/lib/types";
+import { FormConfig, FormConfigSchema } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 
 // Initialize Firebase for Server Actions
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
-const storage = getStorage(app);
-
-
-// This is what the client-side component (NominationForm) expects from getDraft.
-type ClientDraft = {
-  responses: any;
-  updatedAt: string;
-};
 
 
 // FORM CONFIG ACTIONS
@@ -42,6 +33,7 @@ export async function saveFormConfig(config: FormConfig) {
     const docRef = doc(db, "form_configurations", validatedConfig.id);
     await setDoc(docRef, validatedConfig);
     revalidatePath("/dashboard");
+    revalidatePath("/admin/upload");
     return { id: validatedConfig.id };
   } catch (error: any) {
     if (error instanceof Error) return { error: error.message };
@@ -67,92 +59,6 @@ export async function getFormConfig(categoryId: string): Promise<FormConfig | nu
   } catch (error) {
     console.error("Error fetching form config:", error);
     return null;
-  }
-}
-
-// DRAFT ACTIONS
-export async function getDraft(userId: string, categoryId: string): Promise<ClientDraft | null> {
-  const docRef = doc(db, "users", userId, "drafts", categoryId);
-  const docSnap = await getDoc(docRef);
-  if (!docSnap.exists()) return null;
-  
-  const data = docSnap.data();
-
-  let responses = {};
-  try {
-    if (data.formData) {
-        responses = JSON.parse(data.formData);
-    }
-  } catch (e) {
-    console.error("Failed to parse draft formData:", e);
-    // Return empty responses if parsing fails
-  }
-  
-  // Ensure lastSavedAt exists and is a Timestamp before converting
-  if (data.lastSavedAt && data.lastSavedAt instanceof Timestamp) {
-    return {
-      responses: responses,
-      updatedAt: data.lastSavedAt.toDate().toISOString(),
-    };
-  }
-
-  // If draft exists but is malformed (e.g., missing lastSavedAt), return null
-  return null;
-}
-
-export async function saveDraft(userId: string, categoryId: string, responses: any) {
-  try {
-    const docRef = doc(db, "users", userId, "drafts", categoryId);
-    await setDoc(docRef, {
-      userId,
-      formConfigurationId: categoryId,
-      formData: JSON.stringify(responses),
-      lastSavedAt: serverTimestamp(),
-    }, { merge: true });
-    return { success: true, updatedAt: new Date().toISOString() };
-  } catch (error: any) {
-    return { error: error.message };
-  }
-}
-
-// SUBMISSION ACTIONS
-export async function submitNomination(userId: string, categoryId: string, responses: any, files: { [key: string]: File }) {
-  try {
-    const attachmentUrls: { [key: string]: string } = {};
-
-    // 1. Upload files to Cloud Storage
-    for (const questionId in files) {
-      const file = files[questionId];
-      if (file) {
-        const storageRef = ref(storage, `submissions/${userId}/${categoryId}/${Date.now()}_${file.name}`);
-        const snapshot = await uploadBytes(storageRef, file);
-        const downloadURL = await getDownloadURL(snapshot.ref);
-        attachmentUrls[questionId] = downloadURL;
-      }
-    }
-
-    const batch = writeBatch(db);
-
-    // 2. Create submission document
-    const submissionRef = doc(collection(db, "users", userId, "submissions"));
-    batch.set(submissionRef, {
-      userId,
-      formConfigurationId: categoryId,
-      submittedAt: serverTimestamp(),
-      responses: JSON.stringify(responses),
-      attachments: JSON.stringify(attachmentUrls),
-    });
-    
-    // 3. Delete draft document
-    const draftRef = doc(db, "users", userId, "drafts", categoryId);
-    batch.delete(draftRef);
-
-    // 4. Commit batch write
-    await batch.commit();
-
-    return { success: true, submissionId: submissionRef.id };
-  } catch (error: any) {
-    return { error: error.message };
   }
 }
 
