@@ -5,8 +5,8 @@ import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useDebounce } from "@/hooks/use-debounce";
-import { useAuth } from "@/hooks/use-auth";
-import { saveDraft, submitNomination } from "@/lib/actions";
+import { useUser } from "@/firebase";
+import { getDraft, saveDraft, submitNomination } from "@/lib/actions";
 import { FormConfig, Question, Draft } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,20 +20,20 @@ import { useRouter } from "next/navigation";
 
 interface NominationFormProps {
   formConfig: FormConfig;
-  initialDraft: Draft | null;
 }
 
 type FileStore = { [key: string]: File };
 
-export function NominationForm({ formConfig, initialDraft }: NominationFormProps) {
-  const { user } = useAuth();
+export function NominationForm({ formConfig }: NominationFormProps) {
+  const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [lastSaved, setLastSaved] = useState<string | null>(initialDraft?.updatedAt ? new Date(initialDraft.updatedAt).toISOString() : null);
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [files, setFiles] = useState<FileStore>({});
   const [declaration, setDeclaration] = useState(false);
+  const [isLoadingDraft, setIsLoadingDraft] = useState(true);
 
   const validationSchema = z.object(
     formConfig.sections.reduce((acc, section) => {
@@ -54,14 +54,33 @@ export function NominationForm({ formConfig, initialDraft }: NominationFormProps
 
   const methods = useForm({
     resolver: zodResolver(validationSchema),
-    defaultValues: initialDraft?.responses || {},
+    defaultValues: {},
   });
+
+  // Fetch draft when user is available
+  useEffect(() => {
+    async function fetchDraft() {
+      if (user) {
+        setIsLoadingDraft(true);
+        const draft = await getDraft(user.uid, formConfig.id);
+        if (draft) {
+          methods.reset(draft.responses);
+          setLastSaved(new Date(draft.updatedAt).toISOString());
+        }
+        setIsLoadingDraft(false);
+      }
+    }
+    if (!isUserLoading) {
+        fetchDraft();
+    }
+  }, [user, isUserLoading, formConfig.id, methods]);
+
 
   const watchedValues = methods.watch();
   const debouncedValues = useDebounce(watchedValues, 1500);
 
   useEffect(() => {
-    if (!user || !methods.formState.isDirty) return;
+    if (!user || !methods.formState.isDirty || isPending || isLoadingDraft) return;
 
     const responsesToSave = { ...debouncedValues };
 
@@ -72,7 +91,7 @@ export function NominationForm({ formConfig, initialDraft }: NominationFormProps
         methods.formState.isDirty = false;
       }
     });
-  }, [debouncedValues, user, formConfig.id, methods.formState]);
+  }, [debouncedValues, user, formConfig.id, methods.formState, isPending, isLoadingDraft]);
 
   const handleFileChange = (questionId: string, file: File | null) => {
     setFiles(prev => {
@@ -145,6 +164,14 @@ export function NominationForm({ formConfig, initialDraft }: NominationFormProps
         setIsSubmitting(false);
     }
   };
+
+  if (isUserLoading || isLoadingDraft) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <FormProvider {...methods}>

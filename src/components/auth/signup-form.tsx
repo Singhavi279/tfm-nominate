@@ -21,12 +21,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { signUpWithEmail, signInWithGoogle } from "@/lib/actions";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import { useAuth } from "@/firebase";
+import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -38,6 +39,7 @@ export function SignupForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const auth = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -49,31 +51,33 @@ export function SignupForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setLoading(true);
-    const error = await signUpWithEmail(values);
-    setLoading(false);
-    if (error) {
+    try {
+      await createUserWithEmailAndPassword(auth, values.email, values.password);
+      router.push("/dashboard");
+    } catch (error: any) {
       toast({
         title: "Sign Up Failed",
-        description: error,
+        description: error.message,
         variant: "destructive",
       });
-    } else {
-      router.push("/dashboard");
+    } finally {
+      setLoading(false);
     }
   }
 
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
-    const error = await signInWithGoogle();
-    setGoogleLoading(false);
-    if (error) {
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+      router.push("/dashboard");
+    } catch (error: any) {
       toast({
         title: "Google Sign-In Failed",
-        description: error,
+        description: error.message,
         variant: "destructive",
       });
-    } else {
-      router.push("/dashboard");
+    } finally {
+      setGoogleLoading(false);
     }
   }
 
@@ -144,7 +148,7 @@ export function SignupForm() {
               )}
             />
             <Button type="submit" className="w-full" disabled={loading || googleLoading}>
-              {loading && <Loader2 className="animate-spin" />}
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign Up
             </Button>
           </form>

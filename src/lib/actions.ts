@@ -1,25 +1,10 @@
 "use server";
 
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signOut,
-} from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  getDoc,
-  collection,
-  getDocs,
-  serverTimestamp,
-  deleteDoc,
-  Timestamp,
-  writeBatch,
-} from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { auth, db, storage } from "@/lib/firebase/config";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, serverTimestamp, deleteDoc, Timestamp, writeBatch } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { firebaseConfig } from "@/firebase/config";
+
 import {
   generateFormConfig,
   GenerateFormConfigInput,
@@ -28,38 +13,11 @@ import { assistNominationText, AssistNominationTextInput } from "@/ai/flows/assi
 import { FormConfig, FormConfigSchema, Draft } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 
-// AUTH ACTIONS
-export async function signInWithEmail({ email, password }: Record<string, string>) {
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-    return null;
-  } catch (error: any) {
-    return error.message;
-  }
-}
+// Initialize Firebase for Server Actions
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const db = getFirestore(app);
+const storage = getStorage(app);
 
-export async function signUpWithEmail({ email, password }: Record<string, string>) {
-  try {
-    await createUserWithEmailAndPassword(auth, email, password);
-    return null;
-  } catch (error: any) {
-    return error.message;
-  }
-}
-
-export async function signInWithGoogle() {
-  const provider = new GoogleAuthProvider();
-  try {
-    await signInWithPopup(auth, provider);
-    return null;
-  } catch (error: any) {
-    return error.message;
-  }
-}
-
-export async function signOutUser() {
-  await signOut(auth);
-}
 
 // FORM CONFIG ACTIONS
 export async function generateFormConfigAction(input: GenerateFormConfigInput) {
@@ -75,7 +33,7 @@ export async function generateFormConfigAction(input: GenerateFormConfigInput) {
 export async function saveFormConfig(config: FormConfig) {
   try {
     const validatedConfig = FormConfigSchema.parse(config);
-    const docRef = doc(db, "formConfigs", validatedConfig.id);
+    const docRef = doc(db, "form_configurations", validatedConfig.id);
     await setDoc(docRef, validatedConfig);
     revalidatePath("/dashboard");
     return { id: validatedConfig.id };
@@ -87,7 +45,7 @@ export async function saveFormConfig(config: FormConfig) {
 
 export async function getFormConfigs(): Promise<FormConfig[]> {
   try {
-    const querySnapshot = await getDocs(collection(db, "formConfigs"));
+    const querySnapshot = await getDocs(collection(db, "form_configurations"));
     return querySnapshot.docs.map((doc) => doc.data() as FormConfig);
   } catch (error) {
     console.error("Error fetching form configs:", error);
@@ -97,7 +55,7 @@ export async function getFormConfigs(): Promise<FormConfig[]> {
 
 export async function getFormConfig(categoryId: string): Promise<FormConfig | null> {
   try {
-    const docRef = doc(db, "formConfigs", categoryId);
+    const docRef = doc(db, "form_configurations", categoryId);
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? (docSnap.data() as FormConfig) : null;
   } catch (error) {
@@ -108,8 +66,7 @@ export async function getFormConfig(categoryId: string): Promise<FormConfig | nu
 
 // DRAFT ACTIONS
 export async function getDraft(userId: string, categoryId: string): Promise<Draft | null> {
-  const draftId = `${userId}_${categoryId}`;
-  const docRef = doc(db, "drafts", draftId);
+  const docRef = doc(db, "users", userId, "drafts", categoryId);
   const docSnap = await getDoc(docRef);
   if (!docSnap.exists()) return null;
   
@@ -123,13 +80,12 @@ export async function getDraft(userId: string, categoryId: string): Promise<Draf
 
 export async function saveDraft(userId: string, categoryId: string, responses: any) {
   try {
-    const draftId = `${userId}_${categoryId}`;
-    const docRef = doc(db, "drafts", draftId);
+    const docRef = doc(db, "users", userId, "drafts", categoryId);
     await setDoc(docRef, {
       userId,
-      categoryId,
-      responses,
-      updatedAt: serverTimestamp(),
+      formConfigurationId: categoryId,
+      formData: JSON.stringify(responses),
+      lastSavedAt: serverTimestamp(),
     }, { merge: true });
     return { success: true, updatedAt: new Date().toISOString() };
   } catch (error: any) {
@@ -156,18 +112,17 @@ export async function submitNomination(userId: string, categoryId: string, respo
     const batch = writeBatch(db);
 
     // 2. Create submission document
-    const submissionRef = doc(collection(db, "submissions"));
+    const submissionRef = doc(collection(db, "users", userId, "submissions"));
     batch.set(submissionRef, {
       userId,
-      categoryId,
+      formConfigurationId: categoryId,
       submittedAt: serverTimestamp(),
-      responses,
-      attachments: attachmentUrls,
+      responses: JSON.stringify(responses),
+      attachments: JSON.stringify(attachmentUrls),
     });
     
     // 3. Delete draft document
-    const draftId = `${userId}_${categoryId}`;
-    const draftRef = doc(db, "drafts", draftId);
+    const draftRef = doc(db, "users", userId, "drafts", categoryId);
     batch.delete(draftRef);
 
     // 4. Commit batch write
