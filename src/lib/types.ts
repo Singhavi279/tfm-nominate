@@ -27,18 +27,19 @@ export const FormConfigSchema = z.object({
 export type FormConfig = z.infer<typeof FormConfigSchema>;
 
 export type Draft = {
-  id: string; // Composite key: userId_categoryId
+  // This type represents the structure of a draft document in Firestore.
+  // The document ID is the formConfigurationId.
   userId: string;
-  categoryId: string;
-  updatedAt: Timestamp;
-  responses: { [key: string]: any };
+  formConfigurationId: string;
+  lastSavedAt: Timestamp;
+  formData: string; // A JSON string of the form responses.
 };
 
 export type Submission = {
   id: string; // Auto-generated Firestore ID
   userId: string;
-  categoryId: string;
+  formConfigurationId: string;
   submittedAt: Timestamp;
-  responses: { [key: string]: any };
-  attachments: { [key: string]: string }; // question.id -> fileUrl
+  responses: string; // A JSON string of the form responses.
+  attachments: string; // A JSON string mapping question ID to file URL.
 };

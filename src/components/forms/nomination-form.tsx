@@ -7,7 +7,7 @@ import * as z from "zod";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useUser } from "@/firebase";
 import { getDraft, saveDraft, submitNomination } from "@/lib/actions";
-import { FormConfig, Question, Draft } from "@/lib/types";
+import { FormConfig, Question } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuestionRenderer } from "./question-renderer";
@@ -65,7 +65,7 @@ export function NominationForm({ formConfig }: NominationFormProps) {
         const draft = await getDraft(user.uid, formConfig.id);
         if (draft) {
           methods.reset(draft.responses);
-          setLastSaved(new Date(draft.updatedAt).toISOString());
+          setLastSaved(draft.updatedAt);
         }
         setIsLoadingDraft(false);
       }

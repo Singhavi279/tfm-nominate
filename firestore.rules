@@ -17,7 +17,7 @@
  *
  * Key Security Decisions:
  * - User Isolation: All user-specific data is nested under `/users/{userId}`. Rules ensure that `request.auth.uid` always matches the `{userId}` in the path segment, providing a strong security boundary.
- * - Client-Side Immutability: Submitted nominations (`/submissions`) are read-only for the owning user. Writes are disallowed from the client to ensure data integrity, with the expectation that submissions are created by a trusted server process.
+ * - Client-Side Immutability: Submitted nominations (`/submissions`) are read-only for the owning user after creation. Updates and deletes are disallowed from the client to ensure data integrity.
  * - Admin Access via Email: Administrative actions, like creating or modifying form configurations, are restricted to a user whose authenticated email matches a hardcoded value.
  * - No Public User Listing: Users cannot list documents in the top-level `/users` collection.
  *
@@ -81,6 +81,14 @@ service cloud.firestore {
       return isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
     }
 
+    /**
+     * Validates that the user is the owner and that the submission being created contains a 'userId'
+     * field that matches the user's UID. This enforces relational integrity on creation.
+     */
+    function isCreatingOwnSubmission(userId) {
+      return isOwner(userId) && request.resource.data.userId == userId;
+    }
+
 
     // Collection Rules
     // =================================
@@ -133,15 +141,16 @@ service cloud.firestore {
 
     /**
      * @description An immutable record of a user's submitted nomination.
-     *              Users can read their own submissions, but cannot modify or delete them.
+     *              Users can read their own submissions, but cannot modify or delete them after creation.
      * @path /users/{userId}/submissions/{submissionId}
      * @allow (get, list) A user (`auth.uid: 'user123'`) can read and list their own submissions.
-     * @deny (create, update, delete) All client-side writes are blocked. Submissions are created by a trusted server process.
-     * @principle Enforces data immutability for critical records on the client-side.
+     * @allow (create) A user can create their own submission, which is then immutable on the client.
+     * @deny (update, delete) All subsequent client-side writes are blocked to ensure data integrity.
+     * @principle Enforces data immutability for critical records on the client-side after initial creation.
      */
     match /users/{userId}/submissions/{submissionId} {
       allow get, list: if isOwner(userId);
-      allow create: if false; // Writes must be performed by a trusted server process
+      allow create: if isCreatingOwnSubmission(userId);
       allow update: if false; // Submissions are immutable from the client
       allow delete: if false; // Submissions are immutable from the client
     }

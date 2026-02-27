@@ -7,7 +7,6 @@ import { firebaseConfig } from "@/firebase/config";
 
 import {
   generateFormConfig,
-  GenerateFormConfigInput,
 } from "@/ai/flows/generate-form-config";
 import { assistNominationText, AssistNominationTextInput } from "@/ai/flows/assist-nomination-text";
 import { FormConfig, FormConfigSchema, Draft } from "@/lib/types";
@@ -19,8 +18,15 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 
 
+// This is what the client-side component (NominationForm) expects from getDraft.
+type ClientDraft = {
+  responses: any;
+  updatedAt: string;
+};
+
+
 // FORM CONFIG ACTIONS
-export async function generateFormConfigAction(input: GenerateFormConfigInput) {
+export async function generateFormConfigAction(input: any) {
   try {
     const config = await generateFormConfig(input);
     const slug = config.categoryName.toLowerCase().replace(/\s+/g, "_").replace(/[^\w-]+/g, "");
@@ -65,17 +71,33 @@ export async function getFormConfig(categoryId: string): Promise<FormConfig | nu
 }
 
 // DRAFT ACTIONS
-export async function getDraft(userId: string, categoryId: string): Promise<Draft | null> {
+export async function getDraft(userId: string, categoryId: string): Promise<ClientDraft | null> {
   const docRef = doc(db, "users", userId, "drafts", categoryId);
   const docSnap = await getDoc(docRef);
   if (!docSnap.exists()) return null;
   
   const data = docSnap.data();
-  // Firestore Timestamps need to be converted for client-side use
-  return {
-    ...data,
-    updatedAt: (data.updatedAt as Timestamp).toDate().toISOString(),
-  } as unknown as Draft;
+
+  let responses = {};
+  try {
+    if (data.formData) {
+        responses = JSON.parse(data.formData);
+    }
+  } catch (e) {
+    console.error("Failed to parse draft formData:", e);
+    // Return empty responses if parsing fails
+  }
+  
+  // Ensure lastSavedAt exists and is a Timestamp before converting
+  if (data.lastSavedAt && data.lastSavedAt instanceof Timestamp) {
+    return {
+      responses: responses,
+      updatedAt: data.lastSavedAt.toDate().toISOString(),
+    };
+  }
+
+  // If draft exists but is malformed (e.g., missing lastSavedAt), return null
+  return null;
 }
 
 export async function saveDraft(userId: string, categoryId: string, responses: any) {
