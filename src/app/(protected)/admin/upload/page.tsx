@@ -1,6 +1,14 @@
 import { FormUploader } from "@/components/admin/form-uploader";
+import { getFormConfigs } from "@/lib/actions";
+import { ConfigStatusList } from "@/components/admin/config-status-list";
+import { Suspense } from "react";
+import { Loader2 } from "lucide-react";
 
-export default function AdminUploadPage() {
+export const revalidate = 0; // Don't cache this page
+
+export default async function AdminUploadPage() {
+  const formConfigs = await getFormConfigs();
+
   return (
     <div className="container py-8">
       <div className="mb-8">
@@ -10,6 +18,9 @@ export default function AdminUploadPage() {
         </p>
       </div>
       <FormUploader />
+      <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+        <ConfigStatusList configs={formConfigs} />
+      </Suspense>
     </div>
   );
 }
