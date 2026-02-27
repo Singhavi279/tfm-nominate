@@ -15,7 +15,7 @@ export function Header() {
       <div className="container flex h-16 items-center">
         <div className="mr-4 flex">
           <Link href="/dashboard" className="mr-6 flex items-center space-x-2">
-            <span className="font-bold font-headline text-lg text-primary">Apex Nominations</span>
+            <span className="font-bold font-headline text-lg text-primary">TFM Awards 2026 Nominations</span>
           </Link>
         </div>
         <nav className="flex items-center space-x-6 text-sm font-medium">
@@ -27,11 +27,11 @@ export function Header() {
           </Link>
         </nav>
         <div className="flex flex-1 items-center justify-end space-x-4">
-           {isAdmin && (
+          {isAdmin && (
             <Button variant="outline" size="sm" asChild>
               <Link href="/admin/upload">Admin Uploader</Link>
             </Button>
-           )}
+          )}
           <UserNav />
         </div>
       </div>

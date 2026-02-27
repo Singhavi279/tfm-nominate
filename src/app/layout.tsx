@@ -1,10 +1,10 @@
-import type {Metadata} from 'next';
+import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 
 export const metadata: Metadata = {
-  title: 'Apex Nominations',
+  title: 'TFM Awards 2026 Nominations',
   description: 'TFM 2026 Awards Nomination Portal',
 };
 

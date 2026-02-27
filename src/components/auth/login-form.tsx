@@ -64,7 +64,7 @@ export function LoginForm() {
       setLoading(false);
     }
   }
-  
+
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
     try {
@@ -93,7 +93,7 @@ export function LoginForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-headline">Apex Nominations</CardTitle>
+        <CardTitle className="text-2xl font-headline">TFM Awards 2026 Nominations</CardTitle>
         <CardDescription>Sign in to your account</CardDescription>
       </CardHeader>
       <CardContent>
