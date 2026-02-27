@@ -15,55 +15,79 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { generateFormConfigAction, saveFormConfig } from "@/lib/actions";
+import { saveFormConfig } from "@/lib/actions";
 import { FormConfig } from "@/lib/types";
-import { Loader2, Wand2, FileJson, Save } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
+import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
 
 const formSchema = z.object({
-  description: z.string().min(50, {
-    message: "Description must be at least 50 characters long.",
+  segmentName: z.string({ required_error: "Please select a segment." }),
+  categoryName: z.string({ required_error: "Please select a category." }),
+  description: z.string().min(10, {
+    message: "Description must be at least 10 characters.",
   }),
+  sectionsJson: z.string().refine((val) => {
+      try {
+        const parsed = JSON.parse(val);
+        // Add more validation if needed, e.g. checking if it's an array
+        return Array.isArray(parsed);
+      } catch (e) {
+        return false;
+      }
+    }, { message: "Please provide a valid JSON array for sections." }),
 });
 
 export function FormUploader() {
   const { toast } = useToast();
-  const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [generatedConfig, setGeneratedConfig] = useState<FormConfig | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       description: "",
+      sectionsJson: "[]",
     },
   });
 
-  async function onGenerate(values: z.infer<typeof formSchema>) {
-    setGenerating(true);
-    setGeneratedConfig(null);
-    try {
-      const result = await generateFormConfigAction(values);
-      if (result.error) {
-        throw new Error(result.error);
-      }
-      setGeneratedConfig(result.config as FormConfig);
-    } catch (error: any) {
-      toast({
-        title: "Generation Failed",
-        description: error.message || "Could not generate form configuration.",
-        variant: "destructive",
-      });
-    } finally {
-      setGenerating(false);
-    }
-  }
+  const selectedSegment = form.watch("segmentName");
 
-  async function onSave() {
-    if (!generatedConfig) return;
+  async function onSave(values: z.infer<typeof formSchema>) {
     setSaving(true);
+    
+    let sections;
     try {
-      const result = await saveFormConfig(generatedConfig);
+        sections = JSON.parse(values.sectionsJson);
+    } catch(e) {
+        toast({
+            title: "Invalid JSON",
+            description: "The sections field contains invalid JSON.",
+            variant: "destructive"
+        });
+        setSaving(false);
+        return;
+    }
+
+    const slug = values.categoryName.toLowerCase().replace(/\s+/g, "_").replace(/[^\w-]+/g, "");
+
+    const newConfig: FormConfig = {
+      id: slug,
+      segmentName: values.segmentName,
+      categoryName: values.categoryName,
+      description: values.description,
+      sections: sections,
+    };
+
+    try {
+      const result = await saveFormConfig(newConfig);
       if (result.error) {
         throw new Error(result.error);
       }
@@ -71,8 +95,7 @@ export function FormUploader() {
         title: "Success!",
         description: `Form configuration "${result.id}" has been saved.`,
       });
-      setGeneratedConfig(null);
-      form.reset();
+      form.reset({ description: "", sectionsJson: "[]", segmentName: undefined, categoryName: undefined });
     } catch (error: any) {
       toast({
         title: "Save Failed",
@@ -85,73 +108,99 @@ export function FormUploader() {
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>1. Describe Your Form</CardTitle>
-          <CardDescription>Provide a detailed description of the award, its sections, and questions.</CardDescription>
-        </CardHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onGenerate)}>
-            <CardContent>
+    <Card>
+      <CardHeader>
+        <CardTitle>Manual Form Uploader</CardTitle>
+        <CardDescription>Select a category and provide the JSON for its form sections.</CardDescription>
+      </CardHeader>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSave)}>
+          <CardContent className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
               <FormField
                 control={form.control}
-                name="description"
+                name="segmentName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Award Category Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="e.g., An award for Transformational Leaders in Maternity Healthcare. The form should have a section for nominee details (name, title, organization) and a section for accomplishments with a few essay questions."
-                        className="min-h-[300px] text-base"
-                        {...field}
-                      />
-                    </FormControl>
+                    <FormLabel>Segment</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a segment" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {SEGMENT_ORDER.map(segment => (
+                          <SelectItem key={segment} value={segment}>{segment}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" disabled={generating}>
-                {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
-                Generate Config
-              </Button>
-            </CardFooter>
-          </form>
-        </Form>
-      </Card>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>2. Review & Save</CardTitle>
-          <CardDescription>Verify the generated JSON schema before saving it to Firestore.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {generating && (
-             <div className="flex justify-center items-center h-[300px] rounded-md bg-secondary">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-             </div>
-          )}
-          {generatedConfig && (
-            <pre className="mt-2 w-full max-h-[300px] overflow-auto rounded-md bg-secondary p-4 text-sm">
-              <code>{JSON.stringify(generatedConfig, null, 2)}</code>
-            </pre>
-          )}
-           {!generating && !generatedConfig && (
-            <div className="flex flex-col text-center justify-center items-center h-[300px] rounded-md bg-secondary/50 border-dashed border text-muted-foreground">
-                <FileJson className="h-12 w-12 mb-4" />
-                <p className="font-medium">Generated JSON will appear here.</p>
+              <FormField
+                control={form.control}
+                name="categoryName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={!selectedSegment}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {selectedSegment && CATEGORY_ORDER[selectedSegment]?.map(category => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
-           )}
-        </CardContent>
-        <CardFooter>
-          <Button onClick={onSave} disabled={!generatedConfig || saving || generating}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save to Firestore
-          </Button>
-        </CardFooter>
-      </Card>
-    </div>
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category Description</FormLabel>
+                  <FormControl>
+                    <Input placeholder="A brief description for the award category." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="sectionsJson"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sections JSON</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Enter the sections array as JSON..."
+                      className="min-h-[300px] text-base font-mono"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+          <CardFooter>
+            <Button type="submit" disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Configuration
+            </Button>
+          </CardFooter>
+        </form>
+      </Form>
+    </Card>
   );
 }
