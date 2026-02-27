@@ -166,7 +166,7 @@ export function FormUploader() {
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select a category" />
-                        </Trigger>
+                        </SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         {selectedSegment && CATEGORY_ORDER[selectedSegment]?.map(category => (
