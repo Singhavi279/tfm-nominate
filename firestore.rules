@@ -1,0 +1,167 @@
+/**
+ * This ruleset enforces a security model for a nomination platform with three primary data types:
+ * 1. Form Configurations: Publicly readable schemas for building nomination forms.
+ * 2. Drafts: Private, user-owned, work-in-progress nominations.
+ * 3. Submissions: Private, user-owned, immutable, completed nominations.
+ *
+ * Core Philosophy:
+ * The rules enforce a strict user-ownership model for all personal data (drafts, submissions).
+ * A user's private data is structurally segregated under a `/users/{userId}` path, making it impossible
+ * for one user to access another user's data tree. Administrative privileges for managing form
+ * configurations are granted via a Database-Backed Access Control (DBAC) collection (`/roles_admins`).
+ *
+ * Data Structure:
+ * - /form_configurations/{formConfigurationId}: Globally available form structures.
+ * - /users/{userId}/drafts/{formConfigurationId}: A user's private, editable drafts.
+ * - /users/{userId}/submissions/{submissionId}: A user's private, read-only submissions.
+ * - /roles_admins/{adminUid}: A list of UIDs for users with administrative rights.
+ *
+ * Key Security Decisions:
+ * - User Isolation: All user-specific data is nested under `/users/{userId}`. Rules ensure that `request.auth.uid` always matches the `{userId}` in the path segment, providing a strong security boundary.
+ * - Client-Side Immutability: Submitted nominations (`/submissions`) are read-only for the owning user. Writes are disallowed from the client to ensure data integrity, with the expectation that submissions are created by a trusted server process.
+ * - Admin Access via DBAC: Administrative actions, like creating or modifying form configurations, are restricted to users whose UID exists as a document in the `/roles_admins` collection. This collection is not directly readable or writable by any client.
+ * - No Public User Listing: Users cannot list documents in the top-level `/users` collection.
+ *
+ * Denormalization for Authorization:
+ * To ensure fast and simple authorization checks, data is denormalized. For example, a document in
+ * `/users/{userId}/drafts/` contains a `userId` field that must match the `{userId}` from the path. This
+ * avoids costly `get()` calls to parent documents and allows rules to be simple and performant.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper Functions
+    // =================================
+
+    /**
+     * Checks if a user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the currently authenticated user's UID matches the provided userId.
+     * This is the primary function for enforcing data ownership.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+
+    /**
+     * Checks if the document exists and the user is the owner.
+     * Used for safe update and delete operations.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * Checks if the authenticated user has administrative privileges.
+     * Access is granted if a document with the user's UID exists in the /roles_admins collection.
+     */
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admins/$(request.auth.uid));
+    }
+
+    /**
+     * Validates that the user is the owner and that the draft being created contains a 'userId'
+     * field that matches the user's UID. This enforces relational integrity on creation.
+     */
+    function isCreatingOwnDraft(userId) {
+      return isOwner(userId) && request.resource.data.userId == userId;
+    }
+
+    /**
+     * Validates that an update to a draft is performed by the owner and that the 'userId'
+     * field remains unchanged, preventing ownership transfer.
+     */
+    function isUpdatingOwnDraft(userId) {
+      // The `resource != null` check is implicit in using `resource.data`
+      return isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+    }
+
+
+    // Collection Rules
+    // =================================
+
+    /**
+     * @description Publicly readable form configurations for rendering nomination forms.
+     *              Only administrators can create, modify, or delete them.
+     * @path /form_configurations/{formConfigurationId}
+     * @allow (get) Any signed-in user can read a form configuration to build a UI.
+     * @deny (create) A non-administrative user attempting to create a new form configuration.
+     * @principle Public read access for shared data, with writes restricted by role (DBAC).
+     */
+    match /form_configurations/{formConfigurationId} {
+      allow get, list: if isSignedIn();
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin() && resource != null;
+    }
+
+    /**
+     * @description A user's private data, segregated into subcollections. This rule prevents
+     *              listing all users and only allows a user to access their own data tree.
+     * @path /users/{userId}
+     * @allow (get) A user can read their own root user document.
+     * @deny (list) A user cannot list all documents in the `/users` collection.
+     * @deny (get) A user `user_A` cannot read the document for `user_B`.
+     * @principle Enforces strict data isolation between users at the root level.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && resource != null;
+      allow list: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description A user's private, auto-saved draft for a specific nomination form.
+     * @path /users/{userId}/drafts/{formConfigurationId}
+     * @allow (create) A user (`auth.uid: 'user123'`) can create a draft in their own space (`/users/user123/drafts/draft_abc`).
+     * @deny (update) A user (`auth.uid: 'user456'`) cannot update a draft owned by `user123`.
+     * @deny (create) A user cannot create a draft with a mismatched internal `userId` field.
+     * @principle Restricts access to a user's own data tree and validates relational integrity.
+     */
+    match /users/{userId}/drafts/{formConfigurationId} {
+      allow get, list: if isOwner(userId);
+      allow create: if isCreatingOwnDraft(userId);
+      allow update: if isUpdatingOwnDraft(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description An immutable record of a user's submitted nomination.
+     *              Users can read their own submissions, but cannot modify or delete them.
+     * @path /users/{userId}/submissions/{submissionId}
+     * @allow (get, list) A user (`auth.uid: 'user123'`) can read and list their own submissions.
+     * @deny (create, update, delete) All client-side writes are blocked. Submissions are created by a trusted server process.
+     * @principle Enforces data immutability for critical records on the client-side.
+     */
+    match /users/{userId}/submissions/{submissionId} {
+      allow get, list: if isOwner(userId);
+      allow create: if false; // Writes must be performed by a trusted server process
+      allow update: if false; // Submissions are immutable from the client
+      allow delete: if false; // Submissions are immutable from the client
+    }
+
+    /**
+     * @description A collection for Database-Backed Access Control (DBAC) to designate administrators.
+     *              This collection is not intended for direct client access.
+     * @path /roles_admins/{adminUid}
+     * @allow (get) No client access is permitted.
+     * @deny (list) A user cannot enumerate the list of administrators.
+     * @principle Secures metadata used for authorization checks by making it inaccessible to clients.
+     */
+    match /roles_admins/{adminUid} {
+      allow get: if false;
+      allow list: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

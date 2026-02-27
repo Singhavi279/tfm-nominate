@@ -1,0 +1,202 @@
+{
+  "entities": {
+    "FormConfiguration": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FormConfiguration",
+      "type": "object",
+      "description": "Defines the structure and content of a dynamic nomination form for a specific award category.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the form configuration, typically a URL-friendly slug representing the award category (e.g., 'transformational_leader')."
+        },
+        "segmentName": {
+          "type": "string",
+          "description": "The name of the user segment this form configuration belongs to (e.g., 'Individuals', 'Organizations')."
+        },
+        "categoryName": {
+          "type": "string",
+          "description": "The display name of the award category (e.g., 'Transformational Leader in Maternity Healthcare')."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief textual description of the award category and its purpose."
+        },
+        "sections": {
+          "type": "array",
+          "description": "An array of objects, where each object defines a section of the form, including its title, description, and an array of questions. The structure within each section is dynamic based on the form's UI schema.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "segmentName",
+        "categoryName",
+        "description",
+        "sections"
+      ]
+    },
+    "Draft": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Draft",
+      "type": "object",
+      "description": "Stores temporary, auto-saved input data for a user's incomplete nomination application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the draft, typically a composite key of the userId and formConfigurationId (e.g., 'uid12345_transformational_leader')."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User who owns this draft. (Relationship: User 1:N Draft)"
+        },
+        "formConfigurationId": {
+          "type": "string",
+          "description": "Reference to the FormConfiguration entity that this draft corresponds to. (Relationship: FormConfiguration 1:N Draft)"
+        },
+        "formData": {
+          "type": "string",
+          "description": "A JSON string containing the user's current input values for the form fields, structured dynamically based on the associated FormConfiguration."
+        },
+        "lastSavedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the draft was last automatically saved.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "formConfigurationId",
+        "formData",
+        "lastSavedAt"
+      ]
+    },
+    "Submission": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Submission",
+      "type": "object",
+      "description": "An immutable record of a completed and submitted nomination application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the submission, typically an auto-generated ID from the database."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to the User who made this submission. (Relationship: User 1:N Submission)"
+        },
+        "formConfigurationId": {
+          "type": "string",
+          "description": "Reference to the FormConfiguration entity that this submission corresponds to. (Relationship: FormConfiguration 1:N Submission)"
+        },
+        "submittedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the nomination was officially submitted.",
+          "format": "date-time"
+        },
+        "responses": {
+          "type": "string",
+          "description": "A JSON string containing all text and selection answers provided by the user for the submitted form, structured dynamically based on the FormConfiguration."
+        },
+        "attachments": {
+          "type": "string",
+          "description": "A JSON string representing an object that maps question identifiers (e.g., 'question_id_1') to their corresponding Cloud Storage PDF download URLs for uploaded files."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "formConfigurationId",
+        "submittedAt",
+        "responses",
+        "attachments"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/form_configurations/{formConfigurationId}",
+        "definition": {
+          "entityName": "FormConfiguration",
+          "schema": {
+            "$ref": "#/backend/entities/FormConfiguration"
+          },
+          "description": "Stores the JSON schema for each award category's nomination form. Documents are publicly readable for dynamic form rendering, with write access restricted to administrators. The 'id' field of the entity serves as the document ID for 'formConfigurationId'.",
+          "params": [
+            {
+              "name": "formConfigurationId",
+              "description": "The unique slug identifier for a specific award category's form configuration (e.g., 'transformational_leader')."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/drafts/{formConfigurationId}",
+        "definition": {
+          "entityName": "Draft",
+          "schema": {
+            "$ref": "#/backend/entities/Draft"
+          },
+          "description": "Stores temporary, auto-saved input data for a user's incomplete nomination application. Each document includes denormalized 'userId' (matching the path) and 'formConfigurationId' for authorization independence. The document ID is the 'formConfigurationId' for the specific draft. Only the owning user can read/write their drafts.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns this draft."
+            },
+            {
+              "name": "formConfigurationId",
+              "description": "The unique slug identifier of the form configuration this draft corresponds to."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/submissions/{submissionId}",
+        "definition": {
+          "entityName": "Submission",
+          "schema": {
+            "$ref": "#/backend/entities/Submission"
+          },
+          "description": "An immutable record of a completed and submitted nomination application. Each document includes denormalized 'userId' (matching the path) and 'formConfigurationId' for authorization independence. The document ID is an auto-generated Firestore ID. Only the owning user can read their submissions; writes occur via a trusted server process.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who made this submission."
+            },
+            {
+              "name": "submissionId",
+              "description": "The auto-generated unique identifier for this specific submission."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles_admins/{adminUid}",
+        "definition": {
+          "entityName": "admin",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "A collection used for Database-Backed Access Control (DBAC) to designate administrators. The existence of a document at this path (where 'adminUid' is a user's UID) grants administrative privileges. Access is typically read for rules evaluation, write by trusted server processes or other administrators.",
+          "params": [
+            {
+              "name": "adminUid",
+              "description": "The unique identifier of a user who has administrative privileges."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to be secure, scalable, and highly debuggable by strictly adhering to the core design principles and strategy mandates. \n\n**Authorization Independence via Denormalization:**\n\n1.  **Form Configurations (`/form_configurations/{formConfigurationId}`):** These documents are publicly readable, so they do not require user-specific authorization attributes to be denormalized within them. Write access would be restricted to administrators, typically managed by a separate `/roles_admins` collection or server-side logic.\n2.  **User Drafts (`/users/{userId}/drafts/{formConfigurationId}`):** Each draft document includes a `userId` field. This `userId` is also explicitly present in the path segment (`{userId}`). This denormalization is critical for authorization independence. A user's ability to read or write a draft is solely determined by matching `request.auth.uid` with the `{userId}` in the path. This eliminates the need for expensive and complex `get()` calls in security rules to check ownership of a parent document.\n3.  **User Submissions (`/users/{userId}/submissions/{submissionId}`):** Similar to drafts, each submission document includes a `userId` field, which is mirrored in the path segment (`{userId}`). This allows security rules to evaluate ownership atomistically by comparing `request.auth.uid` directly against the `userId` in the path, without needing to fetch any parent or related documents.\n\n**Support for QAPs (Queries as Authorization Primitives):**\n\n1.  **Form Configurations:** The `/form_configurations` collection has a homogeneous security posture (publicly readable). This allows any authenticated user to perform a `list` query (`db.collection('form_configurations').get()`) and retrieve all available form configurations, which aligns with the application's need to dynamically render forms based on available categories. The rules can simply allow `read` for all authenticated users.\n2.  **User Drafts:** By structuring drafts under `/users/{userId}/drafts/{formConfigurationId}`, the `userId` in the path acts as a natural security boundary. A user can only `list` documents within their *own* `/users/{request.auth.uid}/drafts` subcollection. The security rules will enforce that `request.auth.uid == userId`, making `list` operations inherently secure and performant for individual users without server-side filtering.\n3.  **User Submissions:** Similarly, submissions are segregated by user under `/users/{userId}/submissions/{submissionId}`. A user can only `list` their *own* `/users/{request.auth.uid}/submissions` subcollection. The security rules ensure `request.auth.uid == userId`, preventing users from listing or accessing submissions belonging to others. This directly supports the QAP principle by making secure `list` queries straightforward to implement with simple path-based rules.\n\n**Structural Segregation and Access Modeling:**\n\n*   **Private Data:** `Draft` and `Submission` entities are inherently private to a user. They are placed under `users/{userId}` subcollections to establish clear path-based ownership. This ensures that a user can only interact with their own data.\n*   **Global/Shared Data:** `FormConfiguration` entities are shared across all users and are placed in a top-level collection (`/form_configurations`) with read-only access for users and restricted write access for administrators. This separation of concerns simplifies security rules and data management.\n*   **DBAC:** For administrative access (e.g., uploading new form configurations), a pattern like `/roles_admins/{adminUid}` would be used. An administrator's `uid` would exist as a document ID in this collection. Rules could then check for the existence of `get(/databases/$(database)/documents/roles_admins/$(request.auth.uid)) != null` to grant admin privileges, adhering to the 'existence over content' and DBAC principles."
+  }
+}
