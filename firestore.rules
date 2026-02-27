@@ -8,18 +8,17 @@
  * The rules enforce a strict user-ownership model for all personal data (drafts, submissions).
  * A user's private data is structurally segregated under a `/users/{userId}` path, making it impossible
  * for one user to access another user's data tree. Administrative privileges for managing form
- * configurations are granted via a Database-Backed Access Control (DBAC) collection (`/roles_admins`).
+ * configurations are granted via a hardcoded email address in the rules.
  *
  * Data Structure:
  * - /form_configurations/{formConfigurationId}: Globally available form structures.
  * - /users/{userId}/drafts/{formConfigurationId}: A user's private, editable drafts.
  * - /users/{userId}/submissions/{submissionId}: A user's private, read-only submissions.
- * - /roles_admins/{adminUid}: A list of UIDs for users with administrative rights.
  *
  * Key Security Decisions:
  * - User Isolation: All user-specific data is nested under `/users/{userId}`. Rules ensure that `request.auth.uid` always matches the `{userId}` in the path segment, providing a strong security boundary.
  * - Client-Side Immutability: Submitted nominations (`/submissions`) are read-only for the owning user. Writes are disallowed from the client to ensure data integrity, with the expectation that submissions are created by a trusted server process.
- * - Admin Access via DBAC: Administrative actions, like creating or modifying form configurations, are restricted to users whose UID exists as a document in the `/roles_admins` collection. This collection is not directly readable or writable by any client.
+ * - Admin Access via Email: Administrative actions, like creating or modifying form configurations, are restricted to a user whose authenticated email matches a hardcoded value.
  * - No Public User Listing: Users cannot list documents in the top-level `/users` collection.
  *
  * Denormalization for Authorization:
@@ -59,11 +58,10 @@ service cloud.firestore {
     }
 
     /**
-     * Checks if the authenticated user has administrative privileges.
-     * Access is granted if a document with the user's UID exists in the /roles_admins collection.
+     * Checks if the authenticated user has administrative privileges by email.
      */
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_admins/$(request.auth.uid));
+      return isSignedIn() && request.auth.token.email == "t20avnish@gmail.com";
     }
 
     /**
@@ -93,7 +91,7 @@ service cloud.firestore {
      * @path /form_configurations/{formConfigurationId}
      * @allow (get) Any signed-in user can read a form configuration to build a UI.
      * @deny (create) A non-administrative user attempting to create a new form configuration.
-     * @principle Public read access for shared data, with writes restricted by role (DBAC).
+     * @principle Public read access for shared data, with writes restricted by role (admin email).
      */
     match /form_configurations/{formConfigurationId} {
       allow get, list: if isSignedIn();
@@ -147,21 +145,6 @@ service cloud.firestore {
       allow update: if false; // Submissions are immutable from the client
       allow delete: if false; // Submissions are immutable from the client
     }
-
-    /**
-     * @description A collection for Database-Backed Access Control (DBAC) to designate administrators.
-     *              This collection is not intended for direct client access.
-     * @path /roles_admins/{adminUid}
-     * @allow (get) No client access is permitted.
-     * @deny (list) A user cannot enumerate the list of administrators.
-     * @principle Secures metadata used for authorization checks by making it inaccessible to clients.
-     */
-    match /roles_admins/{adminUid} {
-      allow get: if false;
-      allow list: if false;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
-    }
   }
 }
+    
