@@ -1,3 +1,4 @@
+
 "use server";
 
 import { initializeApp, getApps, getApp } from "firebase/app";
@@ -12,8 +13,10 @@ import { FormConfig, FormConfigSchema } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 
 // Initialize Firebase for Server Actions
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+function getDb() {
+    const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    return getFirestore(app);
+}
 
 
 // FORM CONFIG ACTIONS
@@ -28,6 +31,7 @@ export async function generateFormConfigAction(input: any) {
 }
 
 export async function saveFormConfig(config: FormConfig) {
+  const db = getDb();
   try {
     const validatedConfig = FormConfigSchema.parse(config);
     const docRef = doc(db, "form_configurations", validatedConfig.id);
@@ -42,6 +46,7 @@ export async function saveFormConfig(config: FormConfig) {
 }
 
 export async function getFormConfigs(): Promise<FormConfig[]> {
+  const db = getDb();
   try {
     const querySnapshot = await getDocs(collection(db, "form_configurations"));
     return querySnapshot.docs.map((doc) => doc.data() as FormConfig);
@@ -52,6 +57,7 @@ export async function getFormConfigs(): Promise<FormConfig[]> {
 }
 
 export async function getFormConfig(categoryId: string): Promise<FormConfig | null> {
+  const db = getDb();
   try {
     const docRef = doc(db, "form_configurations", categoryId);
     const docSnap = await getDoc(docRef);
