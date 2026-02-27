@@ -38,8 +38,8 @@ export function NominationForm({ formConfig }: NominationFormProps) {
   const [declaration, setDeclaration] = useState(false);
 
   const draftRef = useMemoFirebase(() => {
-      if (!user || !firestore) return null;
-      return doc(firestore, 'users', user.uid, 'drafts', formConfig.id);
+    if (!user || !firestore) return null;
+    return doc(firestore, 'users', user.uid, 'drafts', formConfig.id);
   }, [user, firestore, formConfig.id]);
 
   const { data: draft, isLoading: isLoadingDraft } = useDoc<Draft>(draftRef);
@@ -48,7 +48,7 @@ export function NominationForm({ formConfig }: NominationFormProps) {
     formConfig.sections.reduce((acc, section) => {
       section.questions.forEach((q) => {
         if (q.type === 'FILE_UPLOAD') {
-            // File validation is handled separately
+          // File validation is handled separately
         } else if (q.required) {
           if (q.type === 'CHECKBOX') {
             acc[q.id] = z.array(z.string()).nonempty({ message: "Please select at least one option." });
@@ -61,9 +61,20 @@ export function NominationForm({ formConfig }: NominationFormProps) {
     }, {} as Record<string, z.ZodTypeAny>)
   );
 
+  // Build default values from the form config so every field starts as a
+  // defined value ("" or []) instead of undefined. This prevents the
+  // "uncontrolled to controlled" React warning.
+  const initialDefaults = formConfig.sections.reduce((acc, section) => {
+    section.questions.forEach((q) => {
+      if (q.type === 'FILE_UPLOAD') return; // handled separately
+      acc[q.id] = q.type === 'CHECKBOX' ? [] : '';
+    });
+    return acc;
+  }, {} as Record<string, string | string[]>);
+
   const methods = useForm({
     resolver: zodResolver(validationSchema),
-    defaultValues: {},
+    defaultValues: initialDefaults,
   });
 
   // Load draft data into form when it's fetched
@@ -72,15 +83,15 @@ export function NominationForm({ formConfig }: NominationFormProps) {
       let responses = {};
       try {
         if (draft.formData) {
-            responses = JSON.parse(draft.formData);
+          responses = JSON.parse(draft.formData);
         }
       } catch (e) {
         console.error("Failed to parse draft formData:", e);
       }
       methods.reset(responses);
       if (draft.lastSavedAt) {
-          // The `useDoc` hook returns a Firestore Timestamp. Convert it to ISO string for display.
-          setLastSaved((draft.lastSavedAt as any).toDate().toISOString());
+        // The `useDoc` hook returns a Firestore Timestamp. Convert it to ISO string for display.
+        setLastSaved((draft.lastSavedAt as any).toDate().toISOString());
       }
     }
   }, [draft, methods]);
@@ -95,39 +106,42 @@ export function NominationForm({ formConfig }: NominationFormProps) {
     const responsesToSave = { ...debouncedValues };
 
     startTransition(() => {
-        const docRef = doc(firestore, "users", user.uid, "drafts", formConfig.id);
-        const draftData = {
-          userId: user.uid,
-          formConfigurationId: formConfig.id,
-          formData: JSON.stringify(responsesToSave),
-          lastSavedAt: serverTimestamp(),
-        };
+      const docRef = doc(firestore, "users", user.uid, "drafts", formConfig.id);
+      const draftData = {
+        userId: user.uid,
+        formConfigurationId: formConfig.id,
+        formData: JSON.stringify(responsesToSave),
+        lastSavedAt: serverTimestamp(),
+      };
 
-        setDoc(docRef, draftData, { merge: true })
-          .then(() => {
-              setLastSaved(new Date().toISOString());
-              methods.formState.isDirty = false;
-          })
-          .catch((error) => {
-              const permissionError = new FirestorePermissionError({
-                  path: docRef.path,
-                  operation: 'write',
-                  requestResourceData: draftData,
-              });
-              errorEmitter.emit('permission-error', permissionError);
+      setDoc(docRef, draftData, { merge: true })
+        .then(() => {
+          setLastSaved(new Date().toISOString());
+          // Reset dirty state by telling RHF that current values are the new
+          // "default" — isDirty is a read-only getter and cannot be set directly.
+          methods.reset(methods.getValues(), { keepValues: true });
+        })
+        .catch((error) => {
+          console.error('Auto-save failed. Actual Firebase error:', error);
+          const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'write',
+            requestResourceData: draftData,
           });
+          errorEmitter.emit('permission-error', permissionError);
+        });
     });
   }, [debouncedValues, user, formConfig.id, methods, isPending, isLoadingDraft, firestore]);
 
   const handleFileChange = (questionId: string, file: File | null) => {
     setFiles(prev => {
-        const newFiles = {...prev};
-        if (file) {
-            newFiles[questionId] = file;
-        } else {
-            delete newFiles[questionId];
-        }
-        return newFiles;
+      const newFiles = { ...prev };
+      if (file) {
+        newFiles[questionId] = file;
+      } else {
+        delete newFiles[questionId];
+      }
+      return newFiles;
     })
   }
 
@@ -137,16 +151,16 @@ export function NominationForm({ formConfig }: NominationFormProps) {
 
     let allRequiredFilesUploaded = true;
     formConfig.sections.forEach(section => {
-        section.questions.forEach(q => {
-            if (q.type === 'FILE_UPLOAD' && q.required && !files[q.id]) {
-                allRequiredFilesUploaded = false;
-                toast({
-                    title: "Missing required file",
-                    description: `Please upload a file for "${q.title}".`,
-                    variant: "destructive"
-                });
-            }
-        })
+      section.questions.forEach(q => {
+        if (q.type === 'FILE_UPLOAD' && q.required && !files[q.id]) {
+          allRequiredFilesUploaded = false;
+          toast({
+            title: "Missing required file",
+            description: `Please upload a file for "${q.title}".`,
+            variant: "destructive"
+          });
+        }
+      })
     });
 
     if (!allRequiredFilesUploaded) {
@@ -163,66 +177,66 @@ export function NominationForm({ formConfig }: NominationFormProps) {
       setIsSubmitting(false);
       return;
     }
-    
+
     try {
-        const attachmentUrls: { [key: string]: string } = {};
-        const storage = getStorage();
+      const attachmentUrls: { [key: string]: string } = {};
+      const storage = getStorage();
 
-        // 1. Upload files to Cloud Storage
-        for (const questionId in files) {
-          const file = files[questionId];
-          if (file) {
-            const sRef = storageRef(storage, `submissions/${user.uid}/${formConfig.id}/${Date.now()}_${file.name}`);
-            const snapshot = await uploadBytes(sRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-            attachmentUrls[questionId] = downloadURL;
-          }
+      // 1. Upload files to Cloud Storage
+      for (const questionId in files) {
+        const file = files[questionId];
+        if (file) {
+          const sRef = storageRef(storage, `submissions/${user.uid}/${formConfig.id}/${Date.now()}_${file.name}`);
+          const snapshot = await uploadBytes(sRef, file);
+          const downloadURL = await getDownloadURL(snapshot.ref);
+          attachmentUrls[questionId] = downloadURL;
         }
+      }
 
-        const batch = writeBatch(firestore);
+      const batch = writeBatch(firestore);
 
-        const submissionData = {
-          userId: user.uid,
-          formConfigurationId: formConfig.id,
-          submittedAt: serverTimestamp(),
-          responses: JSON.stringify(data),
-          attachments: JSON.stringify(attachmentUrls),
-        };
+      const submissionData = {
+        userId: user.uid,
+        formConfigurationId: formConfig.id,
+        submittedAt: serverTimestamp(),
+        responses: JSON.stringify(data),
+        attachments: JSON.stringify(attachmentUrls),
+      };
 
-        // 2. Create submission document
-        const submissionRef = doc(collection(firestore, "users", user.uid, "submissions"));
-        batch.set(submissionRef, submissionData);
-        
-        // 3. Delete draft document
-        const draftRef = doc(firestore, "users", user.uid, "drafts", formConfig.id);
-        batch.delete(draftRef);
+      // 2. Create submission document
+      const submissionRef = doc(collection(firestore, "users", user.uid, "submissions"));
+      batch.set(submissionRef, submissionData);
 
-        // 4. Commit batch write
-        await batch.commit();
+      // 3. Delete draft document
+      const draftRef = doc(firestore, "users", user.uid, "drafts", formConfig.id);
+      batch.delete(draftRef);
 
-        toast({
-            title: "Submission Successful!",
-            description: "Your nomination has been submitted.",
-        });
-        router.push(`/nominate/${formConfig.id}/success`);
+      // 4. Commit batch write
+      await batch.commit();
+
+      toast({
+        title: "Submission Successful!",
+        description: "Your nomination has been submitted.",
+      });
+      router.push(`/nominate/${formConfig.id}/success`);
 
     } catch (error: any) {
-        if (error.code && error.code.startsWith('storage/')) {
-            toast({
-                title: "File Upload Failed",
-                description: error.message,
-                variant: "destructive"
-            });
-        } else {
-            const permissionError = new FirestorePermissionError({
-                path: `users/${user.uid}/submissions`,
-                operation: 'create',
-                requestResourceData: "Batch Write on Nomination Submission"
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        }
+      if (error.code && error.code.startsWith('storage/')) {
+        toast({
+          title: "File Upload Failed",
+          description: error.message,
+          variant: "destructive"
+        });
+      } else {
+        const permissionError = new FirestorePermissionError({
+          path: `users/${user.uid}/submissions`,
+          operation: 'create',
+          requestResourceData: "Batch Write on Nomination Submission"
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      }
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -251,22 +265,22 @@ export function NominationForm({ formConfig }: NominationFormProps) {
         ))}
 
         <Card>
-            <CardHeader>
-                <CardTitle>Declaration</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="flex items-start space-x-3">
-                    <Checkbox id="declaration" checked={declaration} onCheckedChange={(checked) => setDeclaration(!!checked)} className="mt-1" />
-                    <div className="grid gap-1.5 leading-none">
-                        <Label htmlFor="declaration" className="font-bold">
-                        I hereby declare that the information provided in this nomination is true, complete, and accurate to the best of my knowledge.
-                        </Label>
-                        <p className="text-sm text-muted-foreground">
-                        By checking this box, you confirm your agreement to the terms and conditions of the TFM 2026 Awards.
-                        </p>
-                    </div>
-                </div>
-            </CardContent>
+          <CardHeader>
+            <CardTitle>Declaration</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-start space-x-3">
+              <Checkbox id="declaration" checked={declaration} onCheckedChange={(checked) => setDeclaration(!!checked)} className="mt-1" />
+              <div className="grid gap-1.5 leading-none">
+                <Label htmlFor="declaration" className="font-bold">
+                  I hereby declare that the information provided in this nomination is true, complete, and accurate to the best of my knowledge.
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  By checking this box, you confirm your agreement to the terms and conditions of the TFM 2026 Awards.
+                </p>
+              </div>
+            </div>
+          </CardContent>
         </Card>
 
 
@@ -283,7 +297,7 @@ export function NominationForm({ formConfig }: NominationFormProps) {
                 Last saved {formatDistanceToNow(new Date(lastSaved), { addSuffix: true })}
               </>
             ) : (
-                "Your changes will be saved automatically."
+              "Your changes will be saved automatically."
             )}
           </div>
           <Button type="submit" size="lg" disabled={isSubmitting || isPending}>
