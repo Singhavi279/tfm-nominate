@@ -94,7 +94,7 @@ service cloud.firestore {
      * @principle Public read access for shared data, with writes restricted by role (admin email).
      */
     match /form_configurations/{formConfigurationId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if true; // Allow public read access
       allow create: if isAdmin();
       allow update, delete: if isAdmin() && resource != null;
     }
@@ -147,4 +147,3 @@ service cloud.firestore {
     }
   }
 }
-    
