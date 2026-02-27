@@ -41,7 +41,7 @@ const SectionSchema = z.object({
   questions: z.array(QuestionSchema).describe('An array of questions within this section.'),
 });
 
-export const GenerateFormConfigInputSchema = z.object({
+const GenerateFormConfigInputSchema = z.object({
   description: z
     .string()
     .describe(
@@ -50,7 +50,7 @@ export const GenerateFormConfigInputSchema = z.object({
 });
 export type GenerateFormConfigInput = z.infer<typeof GenerateFormConfigInputSchema>;
 
-export const GenerateFormConfigOutputSchema = z.object({
+const GenerateFormConfigOutputSchema = z.object({
   segmentName: z.string().describe('The name of the segment this award category belongs to (e.g., Individuals, Organizations).'),
   categoryName: z.string().describe('The name of the award category (e.g., Transformational Leader in Maternity Healthcare).'),
   description: z.string().describe('A brief description of the award category.'),
