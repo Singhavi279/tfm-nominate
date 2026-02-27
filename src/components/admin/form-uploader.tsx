@@ -118,12 +118,6 @@ export function FormUploader() {
                 requestResourceData: validatedConfig
             });
             errorEmitter.emit('permission-error', permissionError);
-            
-            toast({
-                title: "Save Failed",
-                description: error.message || "Permission denied. Ensure you have administrator rights.",
-                variant: "destructive",
-            });
         })
         .finally(() => {
             setSaving(false);
@@ -172,7 +166,7 @@ export function FormUploader() {
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select a category" />
-                        </SelectTrigger>
+                        </Trigger>
                       </FormControl>
                       <SelectContent>
                         {selectedSegment && CATEGORY_ORDER[selectedSegment]?.map(category => (
