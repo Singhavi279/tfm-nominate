@@ -150,5 +150,15 @@ service cloud.firestore {
       allow update: if false; // Submissions are immutable from the client
       allow delete: if false; // Submissions are immutable from the client
     }
+
+    /**
+     * Wildcard rule required for collectionGroup("submissions") queries.
+     * Firestore requires a /{path=**} rule to authorize cross-collection queries.
+     * Without this, collectionGroup queries fail with "Missing or insufficient permissions"
+     * even if the specific-path rule grants access.
+     */
+    match /{path=**}/submissions/{submissionId} {
+      allow read: if isAdmin();
+    }
   }
 }

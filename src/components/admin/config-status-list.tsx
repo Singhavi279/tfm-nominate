@@ -22,8 +22,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2, XCircle, Eye } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection } from "firebase/firestore";
-import { getSubmissionCounts } from "@/lib/actions";
+import { collection, getDocs, collectionGroup } from "firebase/firestore";
 import { SubmissionsViewer } from "./submissions-viewer";
 
 export function ConfigStatusList() {
@@ -40,14 +39,28 @@ export function ConfigStatusList() {
   const [viewingCategory, setViewingCategory] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
+    if (!firestore) return;
+
     async function fetchCounts() {
       setCountsLoading(true);
-      const counts = await getSubmissionCounts();
-      setSubmissionCounts(counts);
-      setCountsLoading(false);
+      try {
+        const snapshot = await getDocs(collectionGroup(firestore, "submissions"));
+        const counts: Record<string, number> = {};
+        snapshot.docs.forEach((d) => {
+          const catId = d.data()?.formConfigurationId;
+          if (catId) {
+            counts[catId] = (counts[catId] || 0) + 1;
+          }
+        });
+        setSubmissionCounts(counts);
+      } catch (error) {
+        console.error("Error fetching submission counts:", error);
+      } finally {
+        setCountsLoading(false);
+      }
     }
     fetchCounts();
-  }, []);
+  }, [firestore]);
 
   const configs = useMemo(() => {
     if (!allConfigs) return [];
@@ -91,7 +104,6 @@ export function ConfigStatusList() {
     );
   }
 
-  // If viewing a specific category's submissions, show that view
   if (viewingCategory) {
     return (
       <SubmissionsViewer

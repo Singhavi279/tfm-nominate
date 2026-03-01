@@ -16,10 +16,11 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Loader2, ExternalLink, FileText } from "lucide-react";
-import { getSubmissionsForCategory, ParsedSubmission, getFormConfig } from "@/lib/actions";
+import { getFormConfig, ParsedSubmission } from "@/lib/actions";
 import { FormConfig } from "@/lib/types";
+import { useFirestore } from "@/firebase";
+import { collectionGroup, query, where, getDocs } from "firebase/firestore";
 
 interface SubmissionsViewerProps {
     categoryId: string;
@@ -28,61 +29,67 @@ interface SubmissionsViewerProps {
 }
 
 export function SubmissionsViewer({ categoryId, categoryName, onBack }: SubmissionsViewerProps) {
+    const firestore = useFirestore();
     const [submissions, setSubmissions] = useState<ParsedSubmission[]>([]);
     const [formConfig, setFormConfig] = useState<FormConfig | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        if (!firestore) return;
+
         async function fetchData() {
             setLoading(true);
-            const [subs, config] = await Promise.all([
-                getSubmissionsForCategory(categoryId),
-                getFormConfig(categoryId),
-            ]);
-            setSubmissions(subs);
-            setFormConfig(config);
-            setLoading(false);
+            try {
+                const config = await getFormConfig(categoryId);
+                setFormConfig(config);
+
+                const submissionsQuery = query(
+                    collectionGroup(firestore, "submissions"),
+                    where("formConfigurationId", "==", categoryId)
+                );
+                const snapshot = await getDocs(submissionsQuery);
+
+                const subs = snapshot.docs.map((d) => {
+                    const data = d.data();
+                    let responses: Record<string, any> = {};
+                    let attachments: Record<string, string> = {};
+                    try { responses = JSON.parse(data.responses || "{}"); } catch { }
+                    try { attachments = JSON.parse(data.attachments || "{}"); } catch { }
+                    return {
+                        id: d.id,
+                        userId: data.userId,
+                        formConfigurationId: data.formConfigurationId,
+                        submittedAt: data.submittedAt?.toDate?.()?.toISOString?.() || "",
+                        responses,
+                        attachments,
+                    };
+                });
+                setSubmissions(subs);
+            } catch (error) {
+                console.error("Error fetching submissions:", error);
+            } finally {
+                setLoading(false);
+            }
         }
         fetchData();
-    }, [categoryId]);
+    }, [categoryId, firestore]);
 
-    // Extract all unique response keys from submissions to build dynamic columns
-    const responseKeys = (() => {
-        if (!formConfig) return [];
-        const keys: string[] = [];
-        formConfig.sections.forEach((section) => {
-            section.questions.forEach((q) => {
-                if (q.type !== "FILE_UPLOAD") {
-                    keys.push(q.id);
-                }
-            });
-        });
-        return keys;
-    })();
-
-    // Build a mapping from question id to title for column headers
+    // Build question keys and titles from form config
+    const responseKeys: string[] = [];
+    const attachmentKeys: string[] = [];
     const questionTitles: Record<string, string> = {};
     if (formConfig) {
         formConfig.sections.forEach((section) => {
             section.questions.forEach((q) => {
                 questionTitles[q.id] = q.title;
-            });
-        });
-    }
-
-    // Collect attachment keys
-    const attachmentKeys = (() => {
-        if (!formConfig) return [];
-        const keys: string[] = [];
-        formConfig.sections.forEach((section) => {
-            section.questions.forEach((q) => {
                 if (q.type === "FILE_UPLOAD") {
-                    keys.push(q.id);
+                    attachmentKeys.push(q.id);
+                } else {
+                    responseKeys.push(q.id);
                 }
             });
         });
-        return keys;
-    })();
+    }
 
     if (loading) {
         return (
