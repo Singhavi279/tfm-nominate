@@ -77,16 +77,28 @@ export type ParsedSubmission = {
   attachments: Record<string, string>;
 };
 
+// --- Admin SDK for server-side privileged queries ---
+import { initializeApp as initializeAdminApp, getApps as getAdminApps, cert } from "firebase-admin/app";
+import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
+
+function getAdminDb() {
+  if (!getAdminApps().length) {
+    initializeAdminApp({
+      projectId: "studio-9085921874-cd434",
+    });
+  }
+  return getAdminFirestore();
+}
+
 export async function getSubmissionsForCategory(categoryId: string): Promise<ParsedSubmission[]> {
-  const db = getDb();
+  const adminDb = getAdminDb();
   try {
-    const submissionsQuery = query(
-      collectionGroup(db, "submissions"),
-      where("formConfigurationId", "==", categoryId)
-    );
-    const snapshot = await getDocs(submissionsQuery);
+    const snapshot = await adminDb
+      .collectionGroup("submissions")
+      .where("formConfigurationId", "==", categoryId)
+      .get();
     return snapshot.docs.map((d) => {
-      const data = d.data() as any;
+      const data = d.data();
       let responses = {};
       let attachments = {};
       try { responses = JSON.parse(data.responses || "{}"); } catch { }
@@ -107,12 +119,12 @@ export async function getSubmissionsForCategory(categoryId: string): Promise<Par
 }
 
 export async function getSubmissionCounts(): Promise<Record<string, number>> {
-  const db = getDb();
+  const adminDb = getAdminDb();
   try {
-    const snapshot = await getDocs(collectionGroup(db, "submissions"));
+    const snapshot = await adminDb.collectionGroup("submissions").get();
     const counts: Record<string, number> = {};
     snapshot.docs.forEach((d) => {
-      const catId = (d.data() as any).formConfigurationId;
+      const catId = d.data().formConfigurationId;
       if (catId) {
         counts[catId] = (counts[catId] || 0) + 1;
       }
