@@ -1,19 +1,37 @@
+"use client";
+
 import { FormUploader } from "@/components/admin/form-uploader";
 import { ConfigStatusList } from "@/components/admin/config-status-list";
-
-export const revalidate = 0; // Don't cache this page
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Upload, LayoutList } from "lucide-react";
 
 export default function AdminUploadPage() {
   return (
     <div className="container py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold font-headline tracking-tight">Manual Form Uploader</h1>
+        <h1 className="text-3xl font-bold font-headline tracking-tight">Admin Dashboard</h1>
         <p className="text-muted-foreground">
-          Manually upload JSON configurations for award nomination forms.
+          Manage form configurations and view nomination responses.
         </p>
       </div>
-      <FormUploader />
-      <ConfigStatusList />
+      <Tabs defaultValue="upload" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="upload" className="gap-2">
+            <Upload className="h-4 w-4" />
+            Upload Config
+          </TabsTrigger>
+          <TabsTrigger value="status" className="gap-2">
+            <LayoutList className="h-4 w-4" />
+            Form Status
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="upload">
+          <FormUploader />
+        </TabsContent>
+        <TabsContent value="status">
+          <ConfigStatusList />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

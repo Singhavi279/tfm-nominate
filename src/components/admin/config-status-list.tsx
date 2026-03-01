@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useMemo } from "react";
 import { FormConfig } from "@/lib/types";
 import {
   Card,
@@ -17,12 +18,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { CheckCircle2, Loader2, XCircle, Eye } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection } from "firebase/firestore";
-
+import { getSubmissionCounts } from "@/lib/actions";
+import { SubmissionsViewer } from "./submissions-viewer";
 
 export function ConfigStatusList() {
   const firestore = useFirestore();
@@ -32,6 +34,20 @@ export function ConfigStatusList() {
   }, [firestore]);
 
   const { data: allConfigs, isLoading } = useCollection<FormConfig>(formConfigsQuery);
+
+  const [submissionCounts, setSubmissionCounts] = useState<Record<string, number>>({});
+  const [countsLoading, setCountsLoading] = useState(true);
+  const [viewingCategory, setViewingCategory] = useState<{ id: string; name: string } | null>(null);
+
+  useEffect(() => {
+    async function fetchCounts() {
+      setCountsLoading(true);
+      const counts = await getSubmissionCounts();
+      setSubmissionCounts(counts);
+      setCountsLoading(false);
+    }
+    fetchCounts();
+  }, []);
 
   const configs = useMemo(() => {
     if (!allConfigs) return [];
@@ -49,7 +65,6 @@ export function ConfigStatusList() {
           result.push(configsByCategoryName[categoryName]);
           delete configsByCategoryName[categoryName];
         } else {
-          // Add a placeholder for missing configs so the admin knows it needs to be added
           result.push({
             id: categoryName.toLowerCase().replace(/\s+/g, '_').replace(/[^\w-]+/g, ''),
             categoryName: categoryName,
@@ -61,21 +76,30 @@ export function ConfigStatusList() {
       });
     });
 
-    // Add any remaining configs that weren't in the ordered list (should be none if lists are synced)
     Object.values(configsByCategoryName).forEach(config => {
       result.push(config);
     });
 
     return result;
-
   }, [allConfigs]);
 
   if (isLoading) {
     return (
-        <div className="flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
-    )
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  // If viewing a specific category's submissions, show that view
+  if (viewingCategory) {
+    return (
+      <SubmissionsViewer
+        categoryId={viewingCategory.id}
+        categoryName={viewingCategory.name}
+        onBack={() => setViewingCategory(null)}
+      />
+    );
   }
 
   if (!allConfigs || configs.length === 0) {
@@ -83,11 +107,11 @@ export function ConfigStatusList() {
   }
 
   return (
-    <Card className="mt-12">
+    <Card>
       <CardHeader>
-        <CardTitle>Configuration Status</CardTitle>
+        <CardTitle>Form Configuration Status</CardTitle>
         <CardDescription>
-          Check which award categories have form data uploaded.
+          Overview of all award categories — their form config status and submission counts.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -97,12 +121,15 @@ export function ConfigStatusList() {
               <TableRow>
                 <TableHead className="w-[150px]">Segment</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead className="w-[120px] text-center">Status</TableHead>
+                <TableHead className="w-[120px] text-center">JSON Status</TableHead>
+                <TableHead className="w-[100px] text-center">Responses</TableHead>
+                <TableHead className="w-[140px] text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {configs.map((config) => {
                 const hasData = config.sections && Array.isArray(config.sections) && config.sections.length > 0;
+                const count = submissionCounts[config.id] || 0;
                 return (
                   <TableRow key={config.id}>
                     <TableCell className="text-muted-foreground">{config.segmentName}</TableCell>
@@ -110,15 +137,33 @@ export function ConfigStatusList() {
                     <TableCell className="text-center">
                       {hasData ? (
                         <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          <CheckCircle2 className="mr-1 h-3 w-3" />
                           Added
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-destructive border-destructive bg-red-50 dark:bg-red-950">
-                           <XCircle className="mr-2 h-4 w-4" />
+                          <XCircle className="mr-1 h-3 w-3" />
                           Empty
                         </Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {countsLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                      ) : (
+                        <Badge variant="secondary">{count}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setViewingCategory({ id: config.id, name: config.categoryName })}
+                        disabled={count === 0}
+                      >
+                        <Eye className="mr-1 h-4 w-4" />
+                        View Responses
+                      </Button>
                     </TableCell>
                   </TableRow>
                 );

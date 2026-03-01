@@ -145,7 +145,7 @@ service cloud.firestore {
      * @principle Enforces data immutability for critical records on the client-side after initial creation.
      */
     match /users/{userId}/submissions/{submissionId} {
-      allow get, list: if isOwner(userId);
+      allow get, list: if isOwner(userId) || isAdmin();
       allow create: if isCreatingOwnSubmission(userId);
       allow update: if false; // Submissions are immutable from the client
       allow delete: if false; // Submissions are immutable from the client

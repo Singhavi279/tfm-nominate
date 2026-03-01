@@ -2,7 +2,7 @@
 "use server";
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, collectionGroup, where } from "firebase/firestore";
 import { firebaseConfig } from "@/firebase/config";
 
 import {
@@ -14,8 +14,8 @@ import { revalidatePath } from "next/cache";
 
 // Initialize Firebase for Server Actions
 function getDb() {
-    const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-    return getFirestore(app);
+  const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+  return getFirestore(app);
 }
 
 
@@ -65,6 +65,62 @@ export async function getFormConfig(categoryId: string): Promise<FormConfig | nu
   } catch (error) {
     console.error("Error fetching form config:", error);
     return null;
+  }
+}
+
+export type ParsedSubmission = {
+  id: string;
+  userId: string;
+  formConfigurationId: string;
+  submittedAt: string; // ISO string
+  responses: Record<string, any>;
+  attachments: Record<string, string>;
+};
+
+export async function getSubmissionsForCategory(categoryId: string): Promise<ParsedSubmission[]> {
+  const db = getDb();
+  try {
+    const submissionsQuery = query(
+      collectionGroup(db, "submissions"),
+      where("formConfigurationId", "==", categoryId)
+    );
+    const snapshot = await getDocs(submissionsQuery);
+    return snapshot.docs.map((d) => {
+      const data = d.data() as any;
+      let responses = {};
+      let attachments = {};
+      try { responses = JSON.parse(data.responses || "{}"); } catch { }
+      try { attachments = JSON.parse(data.attachments || "{}"); } catch { }
+      return {
+        id: d.id,
+        userId: data.userId,
+        formConfigurationId: data.formConfigurationId,
+        submittedAt: data.submittedAt?.toDate?.()?.toISOString?.() || "",
+        responses,
+        attachments,
+      };
+    });
+  } catch (error) {
+    console.error("Error fetching submissions for category:", error);
+    return [];
+  }
+}
+
+export async function getSubmissionCounts(): Promise<Record<string, number>> {
+  const db = getDb();
+  try {
+    const snapshot = await getDocs(collectionGroup(db, "submissions"));
+    const counts: Record<string, number> = {};
+    snapshot.docs.forEach((d) => {
+      const catId = (d.data() as any).formConfigurationId;
+      if (catId) {
+        counts[catId] = (counts[catId] || 0) + 1;
+      }
+    });
+    return counts;
+  } catch (error) {
+    console.error("Error fetching submission counts:", error);
+    return {};
   }
 }
 
