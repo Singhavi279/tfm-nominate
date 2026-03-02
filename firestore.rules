@@ -147,7 +147,7 @@ service cloud.firestore {
     match /users/{userId}/submissions/{submissionId} {
       allow get, list: if isOwner(userId) || isAdmin();
       allow create: if isCreatingOwnSubmission(userId);
-      allow update: if false; // Submissions are immutable from the client
+      allow update: if isAdmin(); // Admins can update status field
       allow delete: if false; // Submissions are immutable from the client
     }
 
@@ -159,6 +159,7 @@ service cloud.firestore {
      */
     match /{path=**}/submissions/{submissionId} {
       allow read: if isAdmin();
+      allow update: if isAdmin(); // Admins can update status across all user submissions
     }
   }
 }
