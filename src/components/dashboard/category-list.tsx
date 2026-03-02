@@ -8,12 +8,12 @@ import { useMemo } from "react";
 import { ArrowRight, FileText, Loader2 } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
 import { useUser, useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { ADMIN_EMAIL } from "@/lib/auth";
+import { ADMIN_EMAILS } from "@/lib/auth";
 import { collection } from "firebase/firestore";
 
 export function CategoryList() {
   const { user } = useUser();
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = ADMIN_EMAILS.includes(user?.email ?? "");
   const firestore = useFirestore();
 
   const formConfigsQuery = useMemoFirebase(() => {
@@ -62,9 +62,9 @@ export function CategoryList() {
 
   if (isLoading) {
     return (
-        <div className="flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
     );
   }
 

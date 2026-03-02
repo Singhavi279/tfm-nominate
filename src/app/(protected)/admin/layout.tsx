@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { notFound } from "next/navigation";
-import { ADMIN_EMAIL } from "@/lib/auth";
+import { ADMIN_EMAILS } from "@/lib/auth";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading: loading } = useUser();
@@ -25,7 +25,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  if (user.email !== ADMIN_EMAIL) {
+  if (!ADMIN_EMAILS.includes(user.email ?? "")) {
     notFound();
   }
 

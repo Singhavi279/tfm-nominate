@@ -16,13 +16,13 @@ import { signOut } from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, LayoutDashboard, CloudUpload } from "lucide-react";
-import { ADMIN_EMAIL } from "@/lib/auth";
+import { ADMIN_EMAILS } from "@/lib/auth";
 
 export function UserNav() {
   const { user } = useUser();
   const auth = useAuth();
   const router = useRouter();
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = ADMIN_EMAILS.includes(user?.email ?? "");
 
   const handleSignOut = async () => {
     await signOut(auth);

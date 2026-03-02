@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { UserNav } from './user-nav';
 import { Button } from '../ui/button';
 import { useUser } from '@/firebase';
-import { ADMIN_EMAIL } from '@/lib/auth';
+import { ADMIN_EMAILS } from '@/lib/auth';
 
 export function Header() {
   const { user } = useUser();
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = ADMIN_EMAILS.includes(user?.email ?? "");
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
