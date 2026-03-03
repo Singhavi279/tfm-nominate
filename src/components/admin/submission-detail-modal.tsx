@@ -32,6 +32,7 @@ interface SubmissionDetailModalProps {
     open: boolean;
     onClose: () => void;
     onStatusChange: (id: string, status: SubmissionStatus) => void;
+    readOnly?: boolean;
 }
 
 const STATUS_CONFIG: Record<SubmissionStatus, { label: string; icon: React.ReactNode; color: string; bg: string; border: string }> = {
@@ -71,6 +72,7 @@ export function SubmissionDetailModal({
     open,
     onClose,
     onStatusChange,
+    readOnly = false,
 }: SubmissionDetailModalProps) {
     const firestore = useFirestore();
     const [updating, setUpdating] = useState(false);
@@ -120,19 +122,21 @@ export function SubmissionDetailModal({
                                 Submitted on {formattedDate}
                             </p>
                         </div>
-                        {/* Current status badge */}
-                        <Badge
-                            variant="outline"
-                            className={cn(
-                                "flex items-center gap-1.5 px-3 py-1 text-xs font-semibold shrink-0",
-                                STATUS_CONFIG[currentStatus].color,
-                                STATUS_CONFIG[currentStatus].bg,
-                                STATUS_CONFIG[currentStatus].border
-                            )}
-                        >
-                            {STATUS_CONFIG[currentStatus].icon}
-                            {STATUS_CONFIG[currentStatus].label}
-                        </Badge>
+                        {/* Current status badge — hidden in readOnly mode */}
+                        {!readOnly && (
+                            <Badge
+                                variant="outline"
+                                className={cn(
+                                    "flex items-center gap-1.5 px-3 py-1 text-xs font-semibold shrink-0",
+                                    STATUS_CONFIG[currentStatus].color,
+                                    STATUS_CONFIG[currentStatus].bg,
+                                    STATUS_CONFIG[currentStatus].border
+                                )}
+                            >
+                                {STATUS_CONFIG[currentStatus].icon}
+                                {STATUS_CONFIG[currentStatus].label}
+                            </Badge>
+                        )}
                     </div>
                 </DialogHeader>
 
@@ -186,33 +190,35 @@ export function SubmissionDetailModal({
                     )}
                 </div>
 
-                {/* Footer: status controls */}
-                <div className="shrink-0 border-t px-6 py-4 flex items-center justify-between gap-3 bg-background">
-                    <div className="flex items-center gap-3">
-                        <p className="text-sm text-muted-foreground font-medium">Mark status:</p>
-                        {updating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                    </div>
+                {/* Footer: status controls — hidden in readOnly mode */}
+                {!readOnly && (
+                    <div className="shrink-0 border-t px-6 py-4 flex items-center justify-between gap-3 bg-background">
+                        <div className="flex items-center gap-3">
+                            <p className="text-sm text-muted-foreground font-medium">Mark status:</p>
+                            {updating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                        </div>
 
-                    <Select
-                        value={currentStatus}
-                        onValueChange={(val) => handleStatusUpdate(val as SubmissionStatus)}
-                        disabled={updating}
-                    >
-                        <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Select Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {(["pending", "approved", "issues", "rejected"] as SubmissionStatus[]).map((s) => (
-                                <SelectItem key={s} value={s}>
-                                    <div className="flex items-center gap-2">
-                                        {STATUS_CONFIG[s].icon}
-                                        {STATUS_CONFIG[s].label}
-                                    </div>
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+                        <Select
+                            value={currentStatus}
+                            onValueChange={(val) => handleStatusUpdate(val as SubmissionStatus)}
+                            disabled={updating}
+                        >
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Select Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {(["pending", "approved", "issues", "rejected"] as SubmissionStatus[]).map((s) => (
+                                    <SelectItem key={s} value={s}>
+                                        <div className="flex items-center gap-2">
+                                            {STATUS_CONFIG[s].icon}
+                                            {STATUS_CONFIG[s].label}
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
             </DialogContent>
         </Dialog>
     );

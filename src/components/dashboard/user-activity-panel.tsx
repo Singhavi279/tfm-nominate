@@ -1,49 +1,25 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
     ArrowRight,
-    CheckCircle2,
     Clock,
-    XCircle,
-    AlertTriangle,
     FileText,
     Pencil,
+    Eye,
 } from "lucide-react";
 import { useUser, useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, orderBy, query } from "firebase/firestore";
 import { FormConfig, Draft, Submission } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { SubmissionDetailModal } from "@/components/admin/submission-detail-modal";
+import { ParsedSubmission } from "@/lib/actions";
 
-type SubmissionStatus = "pending" | "approved" | "issues" | "rejected";
-
-const STATUS_CONFIG: Record<SubmissionStatus, { label: string; icon: React.ReactNode; className: string }> = {
-    pending: {
-        label: "Pending",
-        icon: <Clock className="h-3 w-3" />,
-        className: "text-slate-600 border-slate-300 bg-slate-100",
-    },
-    approved: {
-        label: "Approved",
-        icon: <CheckCircle2 className="h-3 w-3" />,
-        className: "text-green-700 border-green-500 bg-green-50",
-    },
-    issues: {
-        label: "Ok, With Issues",
-        icon: <AlertTriangle className="h-3 w-3" />,
-        className: "text-yellow-700 border-yellow-400 bg-yellow-50",
-    },
-    rejected: {
-        label: "Rejected",
-        icon: <XCircle className="h-3 w-3" />,
-        className: "text-red-700 border-red-500 bg-red-50",
-    },
-};
+type RawSubmission = Submission & { id: string };
+type ModalSubmission = ParsedSubmission & { status?: "pending" | "approved" | "issues" | "rejected" };
 
 // ── Illustrations ────────────────────────────────────────────────────────────
 
@@ -91,13 +67,15 @@ function DraftsEmptyIllustration() {
 export function UserActivityPanel() {
     const { user } = useUser();
     const firestore = useFirestore();
+    const [selectedSub, setSelectedSub] = useState<{ submission: ModalSubmission; config: FormConfig | null } | null>(null);
 
-    // Form configs (to resolve names)
+    // Form configs (to resolve names & get full config for modal)
     const formConfigsQuery = useMemoFirebase(() => collection(firestore, "form_configurations"), [firestore]);
     const { data: configs } = useCollection<FormConfig>(formConfigsQuery);
-    const configMap = useMemo<Record<string, string>>(() => {
+
+    const configMap = useMemo<Record<string, FormConfig>>(() => {
         if (!configs) return {};
-        return configs.reduce((acc, c) => ({ ...acc, [c.id]: c.categoryName }), {});
+        return configs.reduce((acc, c) => ({ ...acc, [c.id]: c }), {});
     }, [configs]);
 
     // Submissions
@@ -108,7 +86,7 @@ export function UserActivityPanel() {
             orderBy("submittedAt", "desc")
         );
     }, [firestore, user]);
-    const { data: submissions, isLoading: subsLoading } = useCollection<Submission & { id: string; status?: SubmissionStatus }>(submissionsQuery);
+    const { data: submissions, isLoading: subsLoading } = useCollection<RawSubmission>(submissionsQuery);
 
     // Drafts
     const draftsQuery = useMemoFirebase(() => {
@@ -122,92 +100,126 @@ export function UserActivityPanel() {
 
     if (!user) return null;
 
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-            {/* Left: Submitted Nominations */}
-            <Card className="flex flex-col">
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-primary" />
-                        My Submitted Nominations
-                    </CardTitle>
-                </CardHeader>
-                <Separator />
-                <CardContent className="p-0 flex-1">
-                    {subsLoading ? (
-                        <div className="flex justify-center py-8">
-                            <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                    ) : !submissions || submissions.length === 0 ? (
-                        <SubmissionsEmptyIllustration />
-                    ) : (
-                        <ul className="divide-y max-h-[300px] overflow-y-auto">
-                            {submissions.map((sub) => {
-                                const status = (sub.status ?? "pending") as SubmissionStatus;
-                                const cfg = STATUS_CONFIG[status];
-                                const categoryName = configMap[sub.formConfigurationId] ?? sub.formConfigurationId;
-                                const date = sub.submittedAt?.toDate?.()?.toLocaleDateString("en-IN", {
-                                    day: "2-digit", month: "short", year: "numeric",
-                                });
-                                return (
-                                    <li key={sub.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium truncate">{categoryName}</p>
-                                            <p className="text-xs text-muted-foreground">{date}</p>
-                                        </div>
-                                        <Badge variant="outline" className={cn("flex items-center gap-1 shrink-0 text-xs", cfg.className)}>
-                                            {cfg.icon}
-                                            {cfg.label}
-                                        </Badge>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                </CardContent>
-            </Card>
+    function openSubmission(raw: RawSubmission) {
+        let responses: Record<string, any> = {};
+        let attachments: Record<string, string> = {};
+        try { responses = JSON.parse(raw.responses || "{}"); } catch { }
+        try { attachments = JSON.parse(raw.attachments || "{}"); } catch { }
 
-            {/* Right: Saved Drafts */}
-            <Card className="flex flex-col">
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                        <Pencil className="h-4 w-4 text-primary" />
-                        My Saved Drafts
-                    </CardTitle>
-                </CardHeader>
-                <Separator />
-                <CardContent className="p-0 flex-1">
-                    {draftsLoading ? (
-                        <div className="flex justify-center py-8">
-                            <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                    ) : !drafts || drafts.length === 0 ? (
-                        <DraftsEmptyIllustration />
-                    ) : (
-                        <ul className="divide-y max-h-[300px] overflow-y-auto">
-                            {drafts.map((draft) => {
-                                const categoryName = configMap[draft.formConfigurationId] ?? draft.formConfigurationId;
-                                const date = draft.lastSavedAt?.toDate?.()?.toLocaleDateString("en-IN", {
-                                    day: "2-digit", month: "short", year: "numeric",
-                                });
-                                return (
-                                    <li key={draft.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium truncate">{categoryName}</p>
-                                            <p className="text-xs text-muted-foreground">Last saved {date}</p>
-                                        </div>
-                                        <Button asChild size="sm" variant="outline" className="shrink-0 gap-1">
-                                            <Link href={`/nominate/${draft.formConfigurationId}`}>
-                                                Continue <ArrowRight className="h-3.5 w-3.5" />
-                                            </Link>
-                                        </Button>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                </CardContent>
-            </Card>
-        </div>
+        const parsed: ModalSubmission = {
+            id: raw.id,
+            userId: raw.userId,
+            formConfigurationId: raw.formConfigurationId,
+            submittedAt: raw.submittedAt?.toDate?.()?.toISOString?.() ?? "",
+            responses,
+            attachments,
+        };
+        setSelectedSub({ submission: parsed, config: configMap[raw.formConfigurationId] ?? null });
+    }
+
+    return (
+        <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+                {/* Left: Submitted Nominations */}
+                <Card className="flex flex-col">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-primary" />
+                            My Submitted Nominations
+                        </CardTitle>
+                    </CardHeader>
+                    <Separator />
+                    <CardContent className="p-0 flex-1">
+                        {subsLoading ? (
+                            <div className="flex justify-center py-8">
+                                <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
+                            </div>
+                        ) : !submissions || submissions.length === 0 ? (
+                            <SubmissionsEmptyIllustration />
+                        ) : (
+                            <ul className="divide-y max-h-[300px] overflow-y-auto">
+                                {submissions.map((sub) => {
+                                    const categoryName = configMap[sub.formConfigurationId]?.categoryName ?? sub.formConfigurationId;
+                                    const date = sub.submittedAt?.toDate?.()?.toLocaleDateString("en-IN", {
+                                        day: "2-digit", month: "short", year: "numeric",
+                                    });
+                                    return (
+                                        <li key={sub.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium truncate">{categoryName}</p>
+                                                <p className="text-xs text-muted-foreground">{date}</p>
+                                            </div>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="shrink-0 gap-1"
+                                                onClick={() => openSubmission(sub)}
+                                            >
+                                                <Eye className="h-3.5 w-3.5" />
+                                                View
+                                            </Button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Right: Saved Drafts */}
+                <Card className="flex flex-col">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <Pencil className="h-4 w-4 text-primary" />
+                            My Saved Drafts
+                        </CardTitle>
+                    </CardHeader>
+                    <Separator />
+                    <CardContent className="p-0 flex-1">
+                        {draftsLoading ? (
+                            <div className="flex justify-center py-8">
+                                <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
+                            </div>
+                        ) : !drafts || drafts.length === 0 ? (
+                            <DraftsEmptyIllustration />
+                        ) : (
+                            <ul className="divide-y max-h-[300px] overflow-y-auto">
+                                {drafts.map((draft) => {
+                                    const categoryName = configMap[draft.formConfigurationId]?.categoryName ?? draft.formConfigurationId;
+                                    const date = draft.lastSavedAt?.toDate?.()?.toLocaleDateString("en-IN", {
+                                        day: "2-digit", month: "short", year: "numeric",
+                                    });
+                                    return (
+                                        <li key={draft.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium truncate">{categoryName}</p>
+                                                <p className="text-xs text-muted-foreground">Last saved {date}</p>
+                                            </div>
+                                            <Button asChild size="sm" variant="outline" className="shrink-0 gap-1">
+                                                <Link href={`/nominate/${draft.formConfigurationId}`}>
+                                                    Continue <ArrowRight className="h-3.5 w-3.5" />
+                                                </Link>
+                                            </Button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Read-only submission detail modal */}
+            {selectedSub && (
+                <SubmissionDetailModal
+                    submission={selectedSub.submission}
+                    formConfig={selectedSub.config}
+                    open={!!selectedSub}
+                    onClose={() => setSelectedSub(null)}
+                    onStatusChange={() => { }} // no-op in readOnly mode
+                    readOnly
+                />
+            )}
+        </>
     );
 }
