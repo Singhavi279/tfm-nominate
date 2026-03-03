@@ -31,6 +31,8 @@ interface SubmissionsViewerProps {
     categoryId: string;
     categoryName: string;
     onBack: () => void;
+    showAuditInfo?: boolean;
+    statusFilters?: SubmissionStatus[];
 }
 
 const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactNode; className: string }> = {
@@ -56,7 +58,7 @@ const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactN
     },
 };
 
-export function SubmissionsViewer({ categoryId, categoryName, onBack }: SubmissionsViewerProps) {
+export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditInfo = false, statusFilters }: SubmissionsViewerProps) {
     const firestore = useFirestore();
     const [submissions, setSubmissions] = useState<EnrichedSubmission[]>([]);
     const [formConfig, setFormConfig] = useState<FormConfig | null>(null);
@@ -92,9 +94,12 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack }: Submissi
                         responses,
                         attachments,
                         status: (data.status as SubmissionStatus) ?? "pending",
+                        statusUpdatedAt: data.statusUpdatedAt?.toDate?.()?.toISOString?.() || undefined,
+                        statusUpdatedBy: data.statusUpdatedBy || undefined,
                     };
                 });
-                setSubmissions(subs);
+                const filtered = statusFilters ? subs.filter((s) => statusFilters.includes(s.status)) : subs;
+                setSubmissions(filtered);
             } catch (error) {
                 console.error("Error fetching submissions:", error);
             } finally {
@@ -216,6 +221,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack }: Submissi
                     open={!!selectedSubmission}
                     onClose={() => setSelectedSubmission(null)}
                     onStatusChange={handleStatusChange}
+                    showAuditInfo={showAuditInfo}
                 />
             )}
         </div>

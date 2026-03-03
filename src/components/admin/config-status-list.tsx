@@ -25,7 +25,13 @@ import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, getDocs, collectionGroup } from "firebase/firestore";
 import { SubmissionsViewer } from "./submissions-viewer";
 
-export function ConfigStatusList() {
+export function ConfigStatusList({
+  onViewCategory,
+  statusFilters,
+}: {
+  onViewCategory?: (id: string, name: string) => void;
+  statusFilters?: string[];
+} = {}) {
   const firestore = useFirestore();
 
   const formConfigsQuery = useMemoFirebase(() => {
@@ -37,6 +43,14 @@ export function ConfigStatusList() {
   const [submissionCounts, setSubmissionCounts] = useState<Record<string, number>>({});
   const [countsLoading, setCountsLoading] = useState(true);
   const [viewingCategory, setViewingCategory] = useState<{ id: string; name: string } | null>(null);
+
+  function handleView(id: string, name: string) {
+    if (onViewCategory) {
+      onViewCategory(id, name);
+    } else {
+      setViewingCategory({ id, name });
+    }
+  }
 
   useEffect(() => {
     if (!firestore) return;
@@ -104,12 +118,14 @@ export function ConfigStatusList() {
     );
   }
 
-  if (viewingCategory) {
+  if (viewingCategory && !onViewCategory) {
     return (
       <SubmissionsViewer
         categoryId={viewingCategory.id}
         categoryName={viewingCategory.name}
         onBack={() => setViewingCategory(null)}
+        showAuditInfo={!onViewCategory} // Super Admin gets audit info
+        statusFilters={statusFilters as any}
       />
     );
   }
@@ -170,7 +186,7 @@ export function ConfigStatusList() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setViewingCategory({ id: config.id, name: config.categoryName })}
+                        onClick={() => handleView(config.id, config.categoryName)}
                         disabled={count === 0}
                       >
                         <Eye className="mr-1 h-4 w-4" />

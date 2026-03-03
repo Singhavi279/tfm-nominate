@@ -11,34 +11,41 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useUser, useAuth } from "@/firebase";
+import { useUser, useAuth, useFirestore } from "@/firebase";
 import { signOut } from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, LayoutDashboard, CloudUpload } from "lucide-react";
-import { ADMIN_EMAILS } from "@/lib/auth";
+import { LogOut, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
+import { SUPER_ADMIN_EMAILS } from "@/lib/auth";
+import { useEffect, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
 
 export function UserNav() {
   const { user } = useUser();
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
-  const isAdmin = ADMIN_EMAILS.includes(user?.email ?? "");
+  const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(user?.email ?? "");
+  const [role, setRole] = useState<"evaluator" | "jury" | null>(null);
+
+  useEffect(() => {
+    if (!user?.email || isSuperAdmin) { setRole(null); return; }
+    getDoc(doc(firestore, "user_roles", user.email))
+      .then((snap) => { if (snap.exists()) setRole(snap.data().role); })
+      .catch(() => { });
+  }, [user?.email, isSuperAdmin, firestore]);
 
   const handleSignOut = async () => {
     await signOut(auth);
     router.push('/login');
   };
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   const getInitials = (email: string | null) => {
     if (!email) return "U";
     const nameParts = email.split('@')[0].replace(/[^a-zA-Z]/g, ' ').split(' ');
-    if (nameParts.length > 1) {
-      return (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase();
-    }
+    if (nameParts.length > 1) return (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase();
     return email.substring(0, 2).toUpperCase();
   };
 
@@ -55,12 +62,8 @@ export function UserNav() {
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">
-              {user.displayName ?? user.email?.split('@')[0]}
-            </p>
-            <p className="text-xs leading-none text-muted-foreground">
-              {user.email}
-            </p>
+            <p className="text-sm font-medium leading-none">{user.displayName ?? user.email?.split('@')[0]}</p>
+            <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -71,11 +74,27 @@ export function UserNav() {
               <span>Dashboard</span>
             </DropdownMenuItem>
           </Link>
-          {isAdmin && (
+          {isSuperAdmin && (
             <Link href="/admin/upload">
               <DropdownMenuItem>
-                <CloudUpload className="mr-2 h-4 w-4" />
-                <span>Admin Uploader</span>
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                <span>Super Admin Panel</span>
+              </DropdownMenuItem>
+            </Link>
+          )}
+          {role === "evaluator" && (
+            <Link href="/evaluator">
+              <DropdownMenuItem>
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                <span>Evaluator Panel</span>
+              </DropdownMenuItem>
+            </Link>
+          )}
+          {role === "jury" && (
+            <Link href="/jury">
+              <DropdownMenuItem>
+                <Users className="mr-2 h-4 w-4" />
+                <span>Jury Panel</span>
               </DropdownMenuItem>
             </Link>
           )}

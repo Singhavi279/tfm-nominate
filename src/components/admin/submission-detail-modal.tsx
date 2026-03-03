@@ -13,8 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle } from "lucide-react";
 import { FormConfig } from "@/lib/types";
 import { ParsedSubmission } from "@/lib/actions";
-import { useFirestore } from "@/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { useFirestore, useUser } from "@/firebase";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import {
     Select,
@@ -27,12 +27,13 @@ import {
 export type SubmissionStatus = "pending" | "approved" | "issues" | "rejected";
 
 interface SubmissionDetailModalProps {
-    submission: ParsedSubmission & { status?: SubmissionStatus };
+    submission: ParsedSubmission & { status?: SubmissionStatus; statusUpdatedAt?: string; statusUpdatedBy?: string };
     formConfig: FormConfig | null;
     open: boolean;
     onClose: () => void;
     onStatusChange: (id: string, status: SubmissionStatus) => void;
     readOnly?: boolean;
+    showAuditInfo?: boolean;
 }
 
 const STATUS_CONFIG: Record<SubmissionStatus, { label: string; icon: React.ReactNode; color: string; bg: string; border: string }> = {
@@ -73,8 +74,10 @@ export function SubmissionDetailModal({
     onClose,
     onStatusChange,
     readOnly = false,
+    showAuditInfo = false,
 }: SubmissionDetailModalProps) {
     const firestore = useFirestore();
+    const { user } = useUser();
     const [updating, setUpdating] = useState(false);
     const currentStatus = submission.status ?? "pending";
 
@@ -89,7 +92,11 @@ export function SubmissionDetailModal({
                 "submissions",
                 submission.id
             );
-            await updateDoc(submissionRef, { status: newStatus });
+            await updateDoc(submissionRef, {
+                status: newStatus,
+                statusUpdatedAt: serverTimestamp(),
+                statusUpdatedBy: user?.email ?? "unknown",
+            });
             onStatusChange(submission.id, newStatus);
         } catch (err) {
             console.error("Failed to update status:", err);
@@ -217,6 +224,13 @@ export function SubmissionDetailModal({
                                 ))}
                             </SelectContent>
                         </Select>
+                        {/* Audit trail — visible to Super Admin only */}
+                        {showAuditInfo && submission.statusUpdatedBy && (
+                            <p className="text-xs text-muted-foreground mt-1 text-right">
+                                Updated by <span className="font-medium">{submission.statusUpdatedBy}</span>
+                                {submission.statusUpdatedAt && ` on ${new Date(submission.statusUpdatedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                            </p>
+                        )}
                     </div>
                 )}
             </DialogContent>

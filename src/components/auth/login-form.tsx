@@ -27,7 +27,26 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/firebase";
+import { getFirestore } from "firebase/firestore";
+import { getApp } from "firebase/app";
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { SUPER_ADMIN_EMAILS } from "@/lib/auth";
+
+async function getRedirectPath(email: string | null): Promise<string> {
+  if (!email) return "/dashboard";
+  if (SUPER_ADMIN_EMAILS.includes(email)) return "/admin/upload";
+  try {
+    const db = getFirestore(getApp());
+    const snap = await getDoc(doc(db, "user_roles", email));
+    if (snap.exists()) {
+      const role = snap.data().role;
+      if (role === "evaluator") return "/evaluator";
+      if (role === "jury") return "/jury";
+    }
+  } catch { }
+  return "/dashboard";
+}
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -52,14 +71,11 @@ export function LoginForm() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      router.push("/dashboard");
+      const cred = await signInWithEmailAndPassword(auth, values.email, values.password);
+      const path = await getRedirectPath(cred.user.email);
+      router.push(path);
     } catch (error: any) {
-      toast({
-        title: "Login Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Login Failed", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -68,14 +84,11 @@ export function LoginForm() {
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-      router.push("/dashboard");
+      const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+      const path = await getRedirectPath(cred.user.email);
+      router.push(path);
     } catch (error: any) {
-      toast({
-        title: "Google Sign-In Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Google Sign-In Failed", description: error.message, variant: "destructive" });
     } finally {
       setGoogleLoading(false);
     }
