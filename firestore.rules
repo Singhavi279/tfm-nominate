@@ -122,5 +122,17 @@ service cloud.firestore {
       allow read: if isSuperAdmin() || isEvaluator() || isJury();
       allow update: if isSuperAdmin() || isEvaluatorStatusUpdate();
     }
+
+    /**
+     * Jury scores — each doc is keyed as {submissionId}__{juryEmail}.
+     * Jury can read/write their own scores. Super admins and evaluators can read all.
+     */
+    match /jury_scores/{scoreId} {
+      allow read: if isSuperAdmin() || isEvaluator() || (isJury() && resource.data.juryEmail == request.auth.token.email);
+      allow create: if isJury() && request.resource.data.juryEmail == request.auth.token.email;
+      allow update: if isJury() && resource.data.juryEmail == request.auth.token.email;
+      allow delete: if isSuperAdmin();
+      allow list: if isSuperAdmin() || isEvaluator();
+    }
   }
 }

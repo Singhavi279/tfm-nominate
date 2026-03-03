@@ -28,9 +28,11 @@ import { SubmissionsViewer } from "./submissions-viewer";
 export function ConfigStatusList({
   onViewCategory,
   statusFilters,
+  assignedCategories,
 }: {
   onViewCategory?: (id: string, name: string) => void;
   statusFilters?: string[];
+  assignedCategories?: string[];
 } = {}) {
   const firestore = useFirestore();
 
@@ -107,8 +109,13 @@ export function ConfigStatusList({
       result.push(config);
     });
 
+    // If assignedCategories is provided, only show those categories
+    if (assignedCategories) {
+      return result.filter(c => assignedCategories.includes(c.id));
+    }
+
     return result;
-  }, [allConfigs]);
+  }, [allConfigs, assignedCategories]);
 
   if (isLoading) {
     return (

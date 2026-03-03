@@ -23,6 +23,7 @@ import { FormConfig } from "@/lib/types";
 import { useFirestore } from "@/firebase";
 import { collectionGroup, query, where, getDocs } from "firebase/firestore";
 import { SubmissionDetailModal, SubmissionStatus } from "./submission-detail-modal";
+import { JuryScoringModal } from "@/components/jury/jury-scoring-modal";
 import { cn } from "@/lib/utils";
 
 type EnrichedSubmission = ParsedSubmission & { status: SubmissionStatus };
@@ -33,6 +34,7 @@ interface SubmissionsViewerProps {
     onBack: () => void;
     showAuditInfo?: boolean;
     statusFilters?: SubmissionStatus[];
+    useJuryModal?: boolean;
 }
 
 const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactNode; className: string }> = {
@@ -58,7 +60,7 @@ const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactN
     },
 };
 
-export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditInfo = false, statusFilters }: SubmissionsViewerProps) {
+export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditInfo = false, statusFilters, useJuryModal = false }: SubmissionsViewerProps) {
     const firestore = useFirestore();
     const [submissions, setSubmissions] = useState<EnrichedSubmission[]>([]);
     const [formConfig, setFormConfig] = useState<FormConfig | null>(null);
@@ -214,7 +216,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
             )}
 
             {/* Detail modal */}
-            {selectedSubmission && (
+            {selectedSubmission && !useJuryModal && (
                 <SubmissionDetailModal
                     submission={selectedSubmission}
                     formConfig={formConfig}
@@ -222,6 +224,14 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     onClose={() => setSelectedSubmission(null)}
                     onStatusChange={handleStatusChange}
                     showAuditInfo={showAuditInfo}
+                />
+            )}
+            {selectedSubmission && useJuryModal && (
+                <JuryScoringModal
+                    submission={selectedSubmission}
+                    formConfig={formConfig}
+                    open={!!selectedSubmission}
+                    onClose={() => setSelectedSubmission(null)}
                 />
             )}
         </div>
