@@ -10,14 +10,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2 } from "lucide-react";
+import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle } from "lucide-react";
 import { FormConfig } from "@/lib/types";
 import { ParsedSubmission } from "@/lib/actions";
 import { useFirestore } from "@/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
-export type SubmissionStatus = "pending" | "approved" | "rejected";
+export type SubmissionStatus = "pending" | "approved" | "issues" | "rejected";
 
 interface SubmissionDetailModalProps {
     submission: ParsedSubmission & { status?: SubmissionStatus };
@@ -31,9 +38,9 @@ const STATUS_CONFIG: Record<SubmissionStatus, { label: string; icon: React.React
     pending: {
         label: "Pending",
         icon: <Clock className="h-3.5 w-3.5" />,
-        color: "text-yellow-700 dark:text-yellow-400",
-        bg: "bg-yellow-50 dark:bg-yellow-950",
-        border: "border-yellow-400",
+        color: "text-slate-700 dark:text-slate-400",
+        bg: "bg-slate-100 dark:bg-slate-900",
+        border: "border-slate-300 dark:border-slate-700",
     },
     approved: {
         label: "Approved",
@@ -41,6 +48,13 @@ const STATUS_CONFIG: Record<SubmissionStatus, { label: string; icon: React.React
         color: "text-green-700 dark:text-green-400",
         bg: "bg-green-50 dark:bg-green-950",
         border: "border-green-500",
+    },
+    issues: {
+        label: "Ok, With Issues",
+        icon: <AlertTriangle className="h-3.5 w-3.5" />, // Or another icon like AlertCircle
+        color: "text-yellow-700 dark:text-yellow-400",
+        bg: "bg-yellow-50 dark:bg-yellow-950",
+        border: "border-yellow-400",
     },
     rejected: {
         label: "Rejected",
@@ -174,28 +188,30 @@ export function SubmissionDetailModal({
 
                 {/* Footer: status controls */}
                 <div className="shrink-0 border-t px-6 py-4 flex items-center justify-between gap-3 bg-background">
-                    <p className="text-sm text-muted-foreground font-medium">Mark status:</p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
+                        <p className="text-sm text-muted-foreground font-medium">Mark status:</p>
                         {updating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                        {(["pending", "approved", "rejected"] as SubmissionStatus[]).map((s) => (
-                            <Button
-                                key={s}
-                                size="sm"
-                                variant={currentStatus === s ? "default" : "outline"}
-                                disabled={updating}
-                                className={cn(
-                                    "gap-1.5",
-                                    currentStatus === s && s === "approved" && "bg-green-600 hover:bg-green-700",
-                                    currentStatus === s && s === "rejected" && "bg-red-600 hover:bg-red-700",
-                                    currentStatus === s && s === "pending" && "bg-yellow-500 hover:bg-yellow-600",
-                                )}
-                                onClick={() => handleStatusUpdate(s)}
-                            >
-                                {STATUS_CONFIG[s].icon}
-                                {STATUS_CONFIG[s].label}
-                            </Button>
-                        ))}
                     </div>
+
+                    <Select
+                        value={currentStatus}
+                        onValueChange={(val) => handleStatusUpdate(val as SubmissionStatus)}
+                        disabled={updating}
+                    >
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Select Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {(["pending", "approved", "issues", "rejected"] as SubmissionStatus[]).map((s) => (
+                                <SelectItem key={s} value={s}>
+                                    <div className="flex items-center gap-2">
+                                        {STATUS_CONFIG[s].icon}
+                                        {STATUS_CONFIG[s].label}
+                                    </div>
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
             </DialogContent>
         </Dialog>

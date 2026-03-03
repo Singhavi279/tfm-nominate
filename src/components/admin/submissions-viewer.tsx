@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import { getFormConfig, ParsedSubmission } from "@/lib/actions";
 import { FormConfig } from "@/lib/types";
 import { useFirestore } from "@/firebase";
@@ -37,12 +37,17 @@ const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactN
     pending: {
         label: "Pending",
         icon: <Clock className="h-3 w-3" />,
-        className: "text-yellow-700 border-yellow-400 bg-yellow-50 dark:bg-yellow-950 dark:text-yellow-400",
+        className: "text-slate-700 border-slate-300 bg-slate-100 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-400",
     },
     approved: {
         label: "Approved",
         icon: <CheckCircle2 className="h-3 w-3" />,
         className: "text-green-700 border-green-500 bg-green-50 dark:bg-green-950 dark:text-green-400",
+    },
+    issues: {
+        label: "Ok, With Issues",
+        icon: <AlertTriangle className="h-3 w-3" />,
+        className: "text-yellow-700 border-yellow-400 bg-yellow-50 dark:bg-yellow-950 dark:text-yellow-400",
     },
     rejected: {
         label: "Rejected",
