@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -112,7 +114,15 @@ export function LoginForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-headline">TFM Awards 2026 Nominations</CardTitle>
+        <Image
+          src="/logo-tfm.png"
+          alt="Times Future of Maternity"
+          width={200}
+          height={29}
+          className="mx-auto mb-3 h-7 w-auto object-contain"
+          priority
+        />
+        <CardTitle className="text-2xl font-headline">TFM 2026 Nominations</CardTitle>
         <CardDescription>Sign in to your account</CardDescription>
       </CardHeader>
       <CardContent>

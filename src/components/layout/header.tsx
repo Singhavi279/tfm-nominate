@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { UserNav } from './user-nav';
 import { Button } from '../ui/button';
 import { useUser, useFirestore } from '@/firebase';
@@ -28,8 +29,18 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
       <div className="container flex h-16 items-center">
         <div className="mr-4 flex">
-          <Link href="/dashboard" className="mr-6 flex items-center space-x-2">
-            <span className="font-bold font-headline text-lg text-primary">TFM Awards 2026 Nominations</span>
+          <Link href="/dashboard" className="mr-6 flex items-center gap-3">
+            <Image
+              src="/logo-tfm.png"
+              alt="Times Future of Maternity"
+              width={120}
+              height={17}
+              className="h-5 w-auto object-contain"
+              priority
+            />
+            <span className="font-semibold font-headline text-sm text-primary hidden sm:inline-block">
+              Nominations 2026
+            </span>
           </Link>
         </div>
         <nav className="flex items-center space-x-6 text-sm font-medium">

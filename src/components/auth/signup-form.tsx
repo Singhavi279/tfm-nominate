@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -93,6 +95,14 @@ export function SignupForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
+        <Image
+          src="/logo-tfm.png"
+          alt="Times Future of Maternity"
+          width={200}
+          height={29}
+          className="mx-auto mb-3 h-7 w-auto object-contain"
+          priority
+        />
         <CardTitle className="text-2xl font-headline">Create an Account</CardTitle>
         <CardDescription>Enter your email below to create your account</CardDescription>
       </CardHeader>
@@ -109,7 +119,7 @@ export function SignupForm() {
               {googleLoading ? <Loader2 className="animate-spin" /> : <GoogleIcon className="mr-2 h-4 w-4" />}
               Sign up with Google
             </Button>
-            
+
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t" />

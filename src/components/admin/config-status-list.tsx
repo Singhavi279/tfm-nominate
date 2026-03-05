@@ -24,6 +24,20 @@ import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, getDocs, collectionGroup } from "firebase/firestore";
 import { SubmissionsViewer } from "./submissions-viewer";
+import { useTableControls } from "@/hooks/use-table-controls";
+import { TableToolbar } from "@/components/ui/table-toolbar";
+
+// Enriched row type for the table
+interface ConfigRow {
+  id: string;
+  categoryName: string;
+  segmentName: string;
+  hasData: boolean;
+  entries: number;
+  eyEvaluated: number;
+  isJuryAssigned: boolean;
+  juryScored: number;
+}
 
 export function ConfigStatusList({
   onViewCategory,
@@ -66,7 +80,6 @@ export function ConfigStatusList({
     async function fetchCounts() {
       setCountsLoading(true);
       try {
-        // 1. Fetch all submissions — count total + evaluator-screened per category
         const snapshot = await getDocs(collectionGroup(firestore, "submissions"));
         const counts: Record<string, number> = {};
         const evCounts: Record<string, number> = {};
@@ -83,7 +96,6 @@ export function ConfigStatusList({
         setSubmissionCounts(counts);
         setEvaluatedCounts(evCounts);
 
-        // 2. Fetch jury assignments — which category IDs are assigned to any jury member
         const rolesSnap = await getDocs(collection(firestore, "user_roles"));
         const assignedSet = new Set<string>();
         rolesSnap.docs.forEach((d) => {
@@ -94,7 +106,6 @@ export function ConfigStatusList({
         });
         setJuryAssignedSet(assignedSet);
 
-        // 3. Fetch jury scores — count unique submissions scored per category
         const scoresSnap = await getDocs(collection(firestore, "jury_scores"));
         const scoredSubs: Record<string, Set<string>> = {};
         scoresSnap.docs.forEach((d) => {
@@ -151,13 +162,41 @@ export function ConfigStatusList({
       result.push(config);
     });
 
-    // If assignedCategories is provided, only show those categories
     if (assignedCategories) {
       return result.filter(c => assignedCategories.includes(c.id));
     }
 
     return result;
   }, [allConfigs, assignedCategories]);
+
+  // Build enriched rows for table controls
+  const rows: ConfigRow[] = useMemo(() => {
+    return configs.map((config) => ({
+      id: config.id,
+      categoryName: config.categoryName,
+      segmentName: config.segmentName,
+      hasData: !!(config.sections && Array.isArray(config.sections) && config.sections.length > 0),
+      entries: submissionCounts[config.id] || 0,
+      eyEvaluated: evaluatedCounts[config.id] || 0,
+      isJuryAssigned: juryAssignedSet.has(config.id),
+      juryScored: juryScoredCounts[config.id] || 0,
+    }));
+  }, [configs, submissionCounts, evaluatedCounts, juryAssignedSet, juryScoredCounts]);
+
+  // Unique segment names for filter dropdown
+  const segmentOptions = useMemo(() => {
+    const unique = [...new Set(rows.map((r) => r.segmentName))].filter(Boolean).sort();
+    return unique.map((s) => ({ value: s, label: s }));
+  }, [rows]);
+
+  const tableControls = useTableControls(rows, {
+    searchFields: ["categoryName", "segmentName"],
+    getSortValue: (item, key) => {
+      if (key === "entries") return item.entries;
+      if (key === "categoryName") return item.categoryName;
+      return (item as any)[key] ?? "";
+    },
+  });
 
   if (isLoading) {
     return (
@@ -173,7 +212,7 @@ export function ConfigStatusList({
         categoryId={viewingCategory.id}
         categoryName={viewingCategory.name}
         onBack={() => setViewingCategory(null)}
-        showAuditInfo={!onViewCategory} // Super Admin gets audit info
+        showAuditInfo={!onViewCategory}
         statusFilters={statusFilters as any}
       />
     );
@@ -192,6 +231,22 @@ export function ConfigStatusList({
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <TableToolbar
+          search={tableControls.search}
+          onSearchChange={tableControls.setSearch}
+          searchPlaceholder="Search categories..."
+          totalCount={tableControls.totalCount}
+          filteredCount={tableControls.filteredCount}
+          filterOptions={[{ key: "segmentName", label: "Segment", options: segmentOptions }]}
+          filters={tableControls.filters}
+          onFilterChange={tableControls.setFilter}
+          sortOptions={[
+            { key: "categoryName", label: "Name" },
+            { key: "entries", label: "Entries" },
+          ]}
+          sort={tableControls.sort}
+          onSortToggle={tableControls.toggleSort}
+        />
         <div className="border rounded-md overflow-x-auto">
           <Table>
             <TableHeader>
@@ -211,84 +266,83 @@ export function ConfigStatusList({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {configs.map((config) => {
-                const hasData = config.sections && Array.isArray(config.sections) && config.sections.length > 0;
-                const entries = submissionCounts[config.id] || 0;
-                const eyEval = evaluatedCounts[config.id] || 0;
-                const isJuryAssigned = juryAssignedSet.has(config.id);
-                const juryScored = juryScoredCounts[config.id] || 0;
-
-                return (
-                  <TableRow key={config.id}>
-                    <TableCell className="text-muted-foreground">{config.segmentName}</TableCell>
-                    <TableCell className="font-medium">{config.categoryName}</TableCell>
-                    <TableCell className="text-center">
-                      {hasData ? (
-                        <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
-                          Added
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-destructive border-destructive bg-red-50 dark:bg-red-950">
-                          <XCircle className="mr-1 h-3 w-3" />
-                          Empty
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {countsLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                      ) : (
-                        <Badge variant="secondary">{entries}</Badge>
-                      )}
-                    </TableCell>
-                    {isSuperAdmin && (
-                      <>
-                        <TableCell className="text-center">
-                          {countsLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                          ) : (
-                            <Badge variant={eyEval > 0 ? "default" : "secondary"}>
-                              {eyEval}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {countsLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                          ) : isJuryAssigned ? (
-                            <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
-                              {entries}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary">0</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {countsLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                          ) : (
-                            <Badge variant={juryScored > 0 ? "default" : "secondary"}>
-                              {juryScored}
-                            </Badge>
-                          )}
-                        </TableCell>
-                      </>
+              {tableControls.filtered.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="text-muted-foreground">{row.segmentName}</TableCell>
+                  <TableCell className="font-medium">{row.categoryName}</TableCell>
+                  <TableCell className="text-center">
+                    {row.hasData ? (
+                      <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
+                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                        Added
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-destructive border-destructive bg-red-50 dark:bg-red-950">
+                        <XCircle className="mr-1 h-3 w-3" />
+                        Empty
+                      </Badge>
                     )}
-                    <TableCell className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleView(config.id, config.categoryName)}
-                        disabled={entries === 0}
-                      >
-                        <Eye className="mr-1 h-4 w-4" />
-                        View Responses
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {countsLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                    ) : (
+                      <Badge variant="secondary">{row.entries}</Badge>
+                    )}
+                  </TableCell>
+                  {isSuperAdmin && (
+                    <>
+                      <TableCell className="text-center">
+                        {countsLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                        ) : (
+                          <Badge variant={row.eyEvaluated > 0 ? "default" : "secondary"}>
+                            {row.eyEvaluated}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {countsLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                        ) : row.isJuryAssigned ? (
+                          <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
+                            {row.entries}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">0</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {countsLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                        ) : (
+                          <Badge variant={row.juryScored > 0 ? "default" : "secondary"}>
+                            {row.juryScored}
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </>
+                  )}
+                  <TableCell className="text-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleView(row.id, row.categoryName)}
+                      disabled={row.entries === 0}
+                    >
+                      <Eye className="mr-1 h-4 w-4" />
+                      View Responses
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {tableControls.filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={isSuperAdmin ? 8 : 5} className="text-center py-8 text-muted-foreground">
+                    No categories match your search.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>

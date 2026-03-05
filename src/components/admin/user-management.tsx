@@ -19,6 +19,8 @@ import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, getDoc, u
 import { useToast } from "@/hooks/use-toast";
 import { FormConfig } from "@/lib/types";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
+import { useTableControls } from "@/hooks/use-table-controls";
+import { TableToolbar } from "@/components/ui/table-toolbar";
 
 type RoleEntry = {
     email: string;
@@ -52,6 +54,12 @@ function EvaluatorSection({
         setAdding(false);
     }
 
+    const tableControls = useTableControls(members, {
+        searchFields: ["email"],
+        defaultSortKey: "email",
+        defaultSortDirection: "asc",
+    });
+
     return (
         <Card>
             <CardHeader>
@@ -76,6 +84,18 @@ function EvaluatorSection({
                     </Button>
                 </div>
                 <Separator />
+                <TableToolbar
+                    search={tableControls.search}
+                    onSearchChange={tableControls.setSearch}
+                    searchPlaceholder="Search evaluators..."
+                    totalCount={tableControls.totalCount}
+                    filteredCount={tableControls.filteredCount}
+                    filters={tableControls.filters}
+                    onFilterChange={tableControls.setFilter}
+                    sortOptions={[{ key: "email", label: "Email" }]}
+                    sort={tableControls.sort}
+                    onSortToggle={tableControls.toggleSort}
+                />
                 {loading ? (
                     <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
                 ) : members.length === 0 ? (
@@ -89,7 +109,7 @@ function EvaluatorSection({
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {members.map((m) => (
+                            {tableControls.filtered.map((m) => (
                                 <TableRow key={m.email}>
                                     <TableCell className="font-mono text-sm">{m.email}</TableCell>
                                     <TableCell className="text-right">
@@ -99,6 +119,13 @@ function EvaluatorSection({
                                     </TableCell>
                                 </TableRow>
                             ))}
+                            {tableControls.filtered.length === 0 && (
+                                <TableRow>
+                                    <TableCell colSpan={2} className="h-24 text-center text-muted-foreground">
+                                        No evaluators match the search.
+                                    </TableCell>
+                                </TableRow>
+                            )}
                         </TableBody>
                     </Table>
                 )}
@@ -263,6 +290,12 @@ function JurySection({
         setAdding(false);
     }
 
+    const tableControls = useTableControls(members, {
+        searchFields: ["email"],
+        defaultSortKey: "email",
+        defaultSortDirection: "asc",
+    });
+
     return (
         <>
             <Card>
@@ -288,6 +321,18 @@ function JurySection({
                         </Button>
                     </div>
                     <Separator />
+                    <TableToolbar
+                        search={tableControls.search}
+                        onSearchChange={tableControls.setSearch}
+                        searchPlaceholder="Search jury members..."
+                        totalCount={tableControls.totalCount}
+                        filteredCount={tableControls.filteredCount}
+                        filters={tableControls.filters}
+                        onFilterChange={tableControls.setFilter}
+                        sortOptions={[{ key: "email", label: "Email" }]}
+                        sort={tableControls.sort}
+                        onSortToggle={tableControls.toggleSort}
+                    />
                     {loading ? (
                         <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
                     ) : members.length === 0 ? (
@@ -302,7 +347,7 @@ function JurySection({
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {members.map((m) => (
+                                {tableControls.filtered.map((m) => (
                                     <TableRow key={m.email}>
                                         <TableCell className="font-mono text-sm">{m.email}</TableCell>
                                         <TableCell className="text-center">
@@ -323,6 +368,13 @@ function JurySection({
                                         </TableCell>
                                     </TableRow>
                                 ))}
+                                {tableControls.filtered.length === 0 && (
+                                    <TableRow>
+                                        <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                                            No jury members match the search.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
                             </TableBody>
                         </Table>
                     )}

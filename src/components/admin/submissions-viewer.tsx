@@ -32,6 +32,8 @@ import { SubmissionDetailModal, SubmissionStatus } from "./submission-detail-mod
 import { JuryScoringModal } from "@/components/jury/jury-scoring-modal";
 import { cn } from "@/lib/utils";
 import { SCORING_PARAMETERS, getSegmentForCategory, ScoringParameter } from "@/lib/scoring-parameters";
+import { useTableControls } from "@/hooks/use-table-controls";
+import { TableToolbar } from "@/components/ui/table-toolbar";
 
 type EnrichedSubmission = ParsedSubmission & { status: SubmissionStatus };
 
@@ -273,14 +275,31 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     );
                     setJuryDisplayNames(nameMap);
                 }
-            } catch (error) {
-                console.error("Error fetching submissions:", error);
+            } catch (err) {
+                console.error("Error fetching data:", err);
             } finally {
                 setLoading(false);
             }
         }
         fetchData();
-    }, [categoryId, firestore]);
+    }, [categoryId, firestore, showAuditInfo, statusFilters]);
+
+    const tableControls = useTableControls(submissions, {
+        searchFields: ["id", "status"],
+        defaultSortKey: "submittedAt",
+        defaultSortDirection: "desc",
+        getSortValue: (item, key) => {
+            if (key === "submittedAt") return new Date(item.submittedAt || 0).getTime();
+            return (item as any)[key] ?? "";
+        }
+    });
+
+    const statusOptions = useMemo(() => {
+        return Object.entries(STATUS_BADGE).map(([value, { label }]) => ({
+            value,
+            label,
+        }));
+    }, []);
 
     const handleStatusChange = (id: string, status: SubmissionStatus) => {
         setSubmissions((prev) =>
@@ -370,6 +389,21 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                         </div>
                     </CardHeader>
                     <CardContent>
+                        <TableToolbar
+                            search={tableControls.search}
+                            onSearchChange={tableControls.setSearch}
+                            searchPlaceholder="Search by ID..."
+                            totalCount={tableControls.totalCount}
+                            filteredCount={tableControls.filteredCount}
+                            filterOptions={[{ key: "status", label: "Status", options: statusOptions }]}
+                            filters={tableControls.filters}
+                            onFilterChange={tableControls.setFilter}
+                            sortOptions={[
+                                { key: "submittedAt", label: "Date" }
+                            ]}
+                            sort={tableControls.sort}
+                            onSortToggle={tableControls.toggleSort}
+                        />
                         <div className="border rounded-md overflow-x-auto">
                             <Table>
                                 <TableHeader>
@@ -406,7 +440,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {submissions.map((sub, idx) => {
+                                    {tableControls.filtered.map((sub, idx) => {
                                         const statusCfg = STATUS_BADGE[sub.status];
                                         const stats = submissionStats[sub.id];
                                         return (
@@ -488,6 +522,13 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                             </TableRow>
                                         );
                                     })}
+                                    {tableControls.filtered.length === 0 && (
+                                        <TableRow>
+                                            <TableCell colSpan={hasJuryData ? 6 + juryNames.length : 4} className="h-24 text-center text-muted-foreground">
+                                                No submissions match your search/filters.
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
                                 </TableBody>
                             </Table>
                         </div>
