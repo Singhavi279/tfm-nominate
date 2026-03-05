@@ -44,24 +44,24 @@ export function Header() {
           </Link>
         </div>
         <nav className="flex items-center space-x-6 text-sm font-medium">
-          <Link href="/dashboard" className="transition-colors hover:text-foreground/80 text-foreground/60">
-            Dashboard
-          </Link>
+          {(!role || isSuperAdmin) && (
+            <Link href="/dashboard" className="transition-colors hover:text-foreground/80 text-foreground/60">
+              Dashboard
+            </Link>
+          )}
+          {(role === "evaluator" || role === "jury") && (
+            <Link
+              href={role === "evaluator" ? "/evaluator" : "/jury"}
+              className="transition-colors hover:text-foreground/80 text-foreground/90 font-semibold"
+            >
+              Form Status
+            </Link>
+          )}
         </nav>
         <div className="flex flex-1 items-center justify-end space-x-4">
           {isSuperAdmin && (
             <Button variant="outline" size="sm" asChild>
               <Link href="/admin/upload">Super Admin</Link>
-            </Button>
-          )}
-          {role === "evaluator" && (
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/evaluator">Evaluator Panel</Link>
-            </Button>
-          )}
-          {role === "jury" && (
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/jury">Jury Panel</Link>
             </Button>
           )}
           <UserNav />

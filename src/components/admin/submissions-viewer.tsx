@@ -26,7 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle, AlertTriangle, Trophy, Star, TrendingUp } from "lucide-react";
 import { getFormConfig, ParsedSubmission } from "@/lib/actions";
 import { FormConfig } from "@/lib/types";
-import { useFirestore } from "@/firebase";
+import { useFirestore, useUser } from "@/firebase";
 import { collectionGroup, collection, query, where, getDocs, getDoc, doc } from "firebase/firestore";
 import { SubmissionDetailModal, SubmissionStatus } from "./submission-detail-modal";
 import { JuryScoringModal } from "@/components/jury/jury-scoring-modal";
@@ -191,6 +191,7 @@ function RankBadge({ rank }: { rank: number }) {
 
 export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditInfo = false, statusFilters, useJuryModal = false }: SubmissionsViewerProps) {
     const firestore = useFirestore();
+    const { user } = useUser();
     const [submissions, setSubmissions] = useState<EnrichedSubmission[]>([]);
     const [formConfig, setFormConfig] = useState<FormConfig | null>(null);
     const [loading, setLoading] = useState(true);
@@ -237,7 +238,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                 const filtered = statusFilters ? subs.filter((s) => statusFilters.includes(s.status)) : subs;
                 setSubmissions(filtered);
 
-                // Fetch jury scores if super admin view
+                // Fetch jury scores if super admin view OR jury member
                 if (showAuditInfo && filtered.length > 0) {
                     const scoresQuery = query(
                         collection(firestore, "jury_scores"),
@@ -253,11 +254,9 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     }));
                     setJuryScores(allScores);
 
-                    // Get unique jury names and fetch display names
                     const uniqueJury = [...new Set(allScores.map((s) => s.juryEmail))].sort();
                     setJuryNames(uniqueJury);
 
-                    // Fetch displayName from user_roles for each jury member
                     const nameMap: Record<string, string> = {};
                     await Promise.all(
                         uniqueJury.map(async (email) => {
@@ -274,6 +273,23 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                         })
                     );
                     setJuryDisplayNames(nameMap);
+                } else if (useJuryModal && user?.email && filtered.length > 0) {
+                    const scoresQuery = query(
+                        collection(firestore, "jury_scores"),
+                        where("formConfigurationId", "==", categoryId),
+                        where("juryEmail", "==", user.email)
+                    );
+                    const scoresSnap = await getDocs(scoresQuery);
+                    const myScores: JuryScore[] = scoresSnap.docs.map((d) => ({
+                        submissionId: d.data().submissionId,
+                        juryEmail: d.data().juryEmail,
+                        scores: d.data().scores || {},
+                        totalScore: d.data().totalScore || 0,
+                        segmentName: d.data().segmentName || "",
+                    }));
+                    setJuryScores(myScores);
+                    setJuryNames([user.email]);
+                    setJuryDisplayNames({ [user.email]: "My Score" });
                 }
             } catch (err) {
                 console.error("Error fetching data:", err);
@@ -282,7 +298,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
             }
         }
         fetchData();
-    }, [categoryId, firestore, showAuditInfo, statusFilters]);
+    }, [categoryId, firestore, showAuditInfo, statusFilters, useJuryModal, user?.email]);
 
     const tableControls = useTableControls(submissions, {
         searchFields: ["id", "status"],
@@ -341,7 +357,8 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
         return stats;
     }, [submissions, juryScores, juryNames, showAuditInfo]);
 
-    const hasJuryData = showAuditInfo && juryNames.length > 0;
+    const hasJuryData = juryNames.length > 0;
+    const showAvgAndRank = showAuditInfo && hasJuryData;
 
     if (loading) {
         return (
@@ -421,7 +438,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                                 </div>
                                             </TableHead>
                                         ))}
-                                        {hasJuryData && (
+                                        {showAvgAndRank && (
                                             <TableHead className="text-center min-w-[80px]">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <TrendingUp className="h-3 w-3" />
@@ -429,7 +446,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                                 </div>
                                             </TableHead>
                                         )}
-                                        {hasJuryData && (
+                                        {showAvgAndRank && (
                                             <TableHead className="text-center min-w-[70px]">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <Trophy className="h-3 w-3" />
@@ -498,7 +515,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                                         </TableCell>
                                                     );
                                                 })}
-                                                {hasJuryData && (
+                                                {showAvgAndRank && (
                                                     <TableCell className="text-center">
                                                         {stats && stats.avg > 0 ? (
                                                             <span className="font-mono font-bold text-sm">
@@ -510,7 +527,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                                         )}
                                                     </TableCell>
                                                 )}
-                                                {hasJuryData && (
+                                                {showAvgAndRank && (
                                                     <TableCell className="text-center">
                                                         {stats && stats.rank > 0 ? (
                                                             <RankBadge rank={stats.rank} />
@@ -524,7 +541,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                     })}
                                     {tableControls.filtered.length === 0 && (
                                         <TableRow>
-                                            <TableCell colSpan={hasJuryData ? 6 + juryNames.length : 4} className="h-24 text-center text-muted-foreground">
+                                            <TableCell colSpan={4 + (hasJuryData ? (showAuditInfo ? 2 + juryNames.length : juryNames.length) : 0)} className="h-24 text-center text-muted-foreground">
                                                 No submissions match your search/filters.
                                             </TableCell>
                                         </TableRow>
@@ -553,6 +570,12 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     formConfig={formConfig}
                     open={!!selectedSubmission}
                     onClose={() => setSelectedSubmission(null)}
+                    onScoreSubmitted={(newScore) => {
+                        setJuryScores((prev) => {
+                            const filtered = prev.filter(s => s.submissionId !== newScore.submissionId || s.juryEmail !== newScore.juryEmail);
+                            return [...filtered, newScore];
+                        });
+                    }}
                 />
             )}
         </div>

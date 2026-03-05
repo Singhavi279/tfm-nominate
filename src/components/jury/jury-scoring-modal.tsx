@@ -25,6 +25,7 @@ interface JuryScoringModalProps {
     formConfig: FormConfig | null;
     open: boolean;
     onClose: () => void;
+    onScoreSubmitted?: (score: any) => void;
 }
 
 export function JuryScoringModal({
@@ -32,6 +33,7 @@ export function JuryScoringModal({
     formConfig,
     open,
     onClose,
+    onScoreSubmitted,
 }: JuryScoringModalProps) {
     const firestore = useFirestore();
     const { user } = useUser();
@@ -88,13 +90,16 @@ export function JuryScoringModal({
         if (!user?.email) return;
         setSaving(true);
         try {
-            await setDoc(doc(firestore, "jury_scores", docId), {
+            const scorePayload = {
                 submissionId: submission.id,
                 juryEmail: user.email,
                 formConfigurationId: submission.formConfigurationId,
                 segmentName,
                 scores,
                 totalScore,
+            };
+            await setDoc(doc(firestore, "jury_scores", docId), {
+                ...scorePayload,
                 scoredAt: serverTimestamp(),
             });
             toast({
@@ -102,6 +107,7 @@ export function JuryScoringModal({
                 description: `Total: ${totalScore}/${maxTotal}`,
             });
             setAlreadyScored(true);
+            onScoreSubmitted?.(scorePayload);
         } catch (err: any) {
             toast({ title: "Error saving scores", description: err.message, variant: "destructive" });
         } finally {
