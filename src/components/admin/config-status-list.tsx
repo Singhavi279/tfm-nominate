@@ -43,8 +43,14 @@ export function ConfigStatusList({
   const { data: allConfigs, isLoading } = useCollection<FormConfig>(formConfigsQuery);
 
   const [submissionCounts, setSubmissionCounts] = useState<Record<string, number>>({});
+  const [evaluatedCounts, setEvaluatedCounts] = useState<Record<string, number>>({});
+  const [juryAssignedSet, setJuryAssignedSet] = useState<Set<string>>(new Set());
+  const [juryScoredCounts, setJuryScoredCounts] = useState<Record<string, number>>({});
   const [countsLoading, setCountsLoading] = useState(true);
   const [viewingCategory, setViewingCategory] = useState<{ id: string; name: string } | null>(null);
+
+  // Whether the caller is Super Admin (no onViewCategory = internal viewer = Super Admin)
+  const isSuperAdmin = !onViewCategory;
 
   function handleView(id: string, name: string) {
     if (onViewCategory) {
@@ -60,15 +66,51 @@ export function ConfigStatusList({
     async function fetchCounts() {
       setCountsLoading(true);
       try {
+        // 1. Fetch all submissions — count total + evaluator-screened per category
         const snapshot = await getDocs(collectionGroup(firestore, "submissions"));
         const counts: Record<string, number> = {};
+        const evCounts: Record<string, number> = {};
         snapshot.docs.forEach((d) => {
-          const catId = d.data()?.formConfigurationId;
+          const data = d.data();
+          const catId = data?.formConfigurationId;
           if (catId) {
             counts[catId] = (counts[catId] || 0) + 1;
+            if (data.status && data.status !== "pending") {
+              evCounts[catId] = (evCounts[catId] || 0) + 1;
+            }
           }
         });
         setSubmissionCounts(counts);
+        setEvaluatedCounts(evCounts);
+
+        // 2. Fetch jury assignments — which category IDs are assigned to any jury member
+        const rolesSnap = await getDocs(collection(firestore, "user_roles"));
+        const assignedSet = new Set<string>();
+        rolesSnap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.role === "jury" && Array.isArray(data.assignedCategories)) {
+            data.assignedCategories.forEach((catId: string) => assignedSet.add(catId));
+          }
+        });
+        setJuryAssignedSet(assignedSet);
+
+        // 3. Fetch jury scores — count unique submissions scored per category
+        const scoresSnap = await getDocs(collection(firestore, "jury_scores"));
+        const scoredSubs: Record<string, Set<string>> = {};
+        scoresSnap.docs.forEach((d) => {
+          const data = d.data();
+          const catId = data.formConfigurationId;
+          const subId = data.submissionId;
+          if (catId && subId) {
+            if (!scoredSubs[catId]) scoredSubs[catId] = new Set();
+            scoredSubs[catId].add(subId);
+          }
+        });
+        const scoredCounts: Record<string, number> = {};
+        Object.entries(scoredSubs).forEach(([catId, subs]) => {
+          scoredCounts[catId] = subs.size;
+        });
+        setJuryScoredCounts(scoredCounts);
       } catch (error) {
         console.error("Error fetching submission counts:", error);
       } finally {
@@ -150,21 +192,32 @@ export function ConfigStatusList({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="border rounded-md">
+        <div className="border rounded-md overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[150px]">Segment</TableHead>
+                <TableHead className="w-[130px]">Segment</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead className="w-[120px] text-center">JSON Status</TableHead>
-                <TableHead className="w-[100px] text-center">Responses</TableHead>
-                <TableHead className="w-[140px] text-center">Actions</TableHead>
+                <TableHead className="w-[110px] text-center">JSON Status</TableHead>
+                <TableHead className="w-[80px] text-center">Entries</TableHead>
+                {isSuperAdmin && (
+                  <>
+                    <TableHead className="w-[110px] text-center">EY Evaluated</TableHead>
+                    <TableHead className="w-[110px] text-center">Jury Assigned</TableHead>
+                    <TableHead className="w-[110px] text-center">Jury Evaluated</TableHead>
+                  </>
+                )}
+                <TableHead className="w-[130px] text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {configs.map((config) => {
                 const hasData = config.sections && Array.isArray(config.sections) && config.sections.length > 0;
-                const count = submissionCounts[config.id] || 0;
+                const entries = submissionCounts[config.id] || 0;
+                const eyEval = evaluatedCounts[config.id] || 0;
+                const isJuryAssigned = juryAssignedSet.has(config.id);
+                const juryScored = juryScoredCounts[config.id] || 0;
+
                 return (
                   <TableRow key={config.id}>
                     <TableCell className="text-muted-foreground">{config.segmentName}</TableCell>
@@ -186,15 +239,48 @@ export function ConfigStatusList({
                       {countsLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                       ) : (
-                        <Badge variant="secondary">{count}</Badge>
+                        <Badge variant="secondary">{entries}</Badge>
                       )}
                     </TableCell>
+                    {isSuperAdmin && (
+                      <>
+                        <TableCell className="text-center">
+                          {countsLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                          ) : (
+                            <Badge variant={eyEval > 0 ? "default" : "secondary"}>
+                              {eyEval}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {countsLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                          ) : isJuryAssigned ? (
+                            <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
+                              {entries}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">0</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {countsLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                          ) : (
+                            <Badge variant={juryScored > 0 ? "default" : "secondary"}>
+                              {juryScored}
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell className="text-center">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleView(config.id, config.categoryName)}
-                        disabled={count === 0}
+                        disabled={entries === 0}
                       >
                         <Eye className="mr-1 h-4 w-4" />
                         View Responses
