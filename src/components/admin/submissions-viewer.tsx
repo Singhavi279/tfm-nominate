@@ -27,7 +27,7 @@ import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle, AlertT
 import { getFormConfig, ParsedSubmission } from "@/lib/actions";
 import { FormConfig } from "@/lib/types";
 import { useFirestore } from "@/firebase";
-import { collectionGroup, collection, query, where, getDocs } from "firebase/firestore";
+import { collectionGroup, collection, query, where, getDocs, getDoc, doc } from "firebase/firestore";
 import { SubmissionDetailModal, SubmissionStatus } from "./submission-detail-modal";
 import { JuryScoringModal } from "@/components/jury/jury-scoring-modal";
 import { cn } from "@/lib/utils";
@@ -80,10 +80,12 @@ const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactN
 function ScoreBreakdownPopover({
     score,
     juryEmail,
+    displayName,
     parameters,
 }: {
     score: JuryScore;
     juryEmail: string;
+    displayName: string;
     parameters: ScoringParameter[];
 }) {
     const maxTotal = parameters.reduce((a, p) => a + p.maxScore, 0);
@@ -112,7 +114,7 @@ function ScoreBreakdownPopover({
             <PopoverContent className="w-72 p-0" align="center" side="bottom">
                 <div className="px-4 py-3 border-b bg-muted/30">
                     <p className="text-xs text-muted-foreground">Score Breakdown</p>
-                    <p className="text-sm font-semibold truncate">{juryEmail.split("@")[0]}</p>
+                    <p className="text-sm font-semibold truncate">{displayName}</p>
                 </div>
                 <div className="px-4 py-3 space-y-2.5">
                     {parameters.map((param) => {
@@ -195,6 +197,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
     // Jury scores state (only fetched when showAuditInfo is true = Super Admin)
     const [juryScores, setJuryScores] = useState<JuryScore[]>([]);
     const [juryNames, setJuryNames] = useState<string[]>([]);
+    const [juryDisplayNames, setJuryDisplayNames] = useState<Record<string, string>>({});
 
     useEffect(() => {
         if (!firestore) return;
@@ -248,9 +251,27 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     }));
                     setJuryScores(allScores);
 
-                    // Get unique jury names
+                    // Get unique jury names and fetch display names
                     const uniqueJury = [...new Set(allScores.map((s) => s.juryEmail))].sort();
                     setJuryNames(uniqueJury);
+
+                    // Fetch displayName from user_roles for each jury member
+                    const nameMap: Record<string, string> = {};
+                    await Promise.all(
+                        uniqueJury.map(async (email) => {
+                            try {
+                                const roleSnap = await getDoc(doc(firestore, "user_roles", email));
+                                if (roleSnap.exists() && roleSnap.data().displayName) {
+                                    nameMap[email] = roleSnap.data().displayName;
+                                } else {
+                                    nameMap[email] = email.split("@")[0];
+                                }
+                            } catch {
+                                nameMap[email] = email.split("@")[0];
+                            }
+                        })
+                    );
+                    setJuryDisplayNames(nameMap);
                 }
             } catch (error) {
                 console.error("Error fetching submissions:", error);
@@ -361,7 +382,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                             <TableHead key={email} className="text-center min-w-[100px]">
                                                 <div className="flex flex-col items-center gap-0.5">
                                                     <span className="text-xs font-medium truncate max-w-[100px]" title={email}>
-                                                        {email.split("@")[0]}
+                                                        {juryDisplayNames[email] || email.split("@")[0]}
                                                     </span>
                                                 </div>
                                             </TableHead>
@@ -434,6 +455,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                                                 <ScoreBreakdownPopover
                                                                     score={score}
                                                                     juryEmail={email}
+                                                                    displayName={juryDisplayNames[email] || email.split("@")[0]}
                                                                     parameters={parameters}
                                                                 />
                                                             ) : (
