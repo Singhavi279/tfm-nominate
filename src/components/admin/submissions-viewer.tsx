@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
     Card,
     CardContent,
@@ -17,16 +17,31 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle, AlertTriangle, Trophy, Star, TrendingUp } from "lucide-react";
 import { getFormConfig, ParsedSubmission } from "@/lib/actions";
 import { FormConfig } from "@/lib/types";
 import { useFirestore } from "@/firebase";
-import { collectionGroup, query, where, getDocs } from "firebase/firestore";
+import { collectionGroup, collection, query, where, getDocs } from "firebase/firestore";
 import { SubmissionDetailModal, SubmissionStatus } from "./submission-detail-modal";
 import { JuryScoringModal } from "@/components/jury/jury-scoring-modal";
 import { cn } from "@/lib/utils";
+import { SCORING_PARAMETERS, getSegmentForCategory, ScoringParameter } from "@/lib/scoring-parameters";
 
 type EnrichedSubmission = ParsedSubmission & { status: SubmissionStatus };
+
+type JuryScore = {
+    submissionId: string;
+    juryEmail: string;
+    scores: Record<string, number>;
+    totalScore: number;
+    segmentName: string;
+};
 
 interface SubmissionsViewerProps {
     categoryId: string;
@@ -60,12 +75,126 @@ const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactN
     },
 };
 
+// ── Score Breakdown Popover ──────────────────────────────────────────────────
+
+function ScoreBreakdownPopover({
+    score,
+    juryEmail,
+    parameters,
+}: {
+    score: JuryScore;
+    juryEmail: string;
+    parameters: ScoringParameter[];
+}) {
+    const maxTotal = parameters.reduce((a, p) => a + p.maxScore, 0);
+    const pct = maxTotal > 0 ? Math.round((score.totalScore / maxTotal) * 100) : 0;
+
+    // Color coding based on percentage
+    const pillColor = pct >= 75
+        ? "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-700"
+        : pct >= 50
+            ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700"
+            : "bg-red-100 text-red-800 border-red-300 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-700";
+
+    return (
+        <Popover>
+            <PopoverTrigger asChild>
+                <button
+                    className={cn(
+                        "inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-semibold font-mono cursor-pointer transition-colors",
+                        pillColor
+                    )}
+                >
+                    {score.totalScore}
+                    <span className="text-[10px] opacity-60">/{maxTotal}</span>
+                </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-0" align="center" side="bottom">
+                <div className="px-4 py-3 border-b bg-muted/30">
+                    <p className="text-xs text-muted-foreground">Score Breakdown</p>
+                    <p className="text-sm font-semibold truncate">{juryEmail.split("@")[0]}</p>
+                </div>
+                <div className="px-4 py-3 space-y-2.5">
+                    {parameters.map((param) => {
+                        const val = score.scores[param.name] ?? 0;
+                        const barPct = param.maxScore > 0 ? (val / param.maxScore) * 100 : 0;
+                        return (
+                            <div key={param.name}>
+                                <div className="flex items-center justify-between text-xs mb-1">
+                                    <span className="text-muted-foreground truncate mr-2">{param.name}</span>
+                                    <span className="font-mono font-semibold shrink-0">
+                                        {val}<span className="text-muted-foreground">/{param.maxScore}</span>
+                                    </span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                    <div
+                                        className={cn(
+                                            "h-full rounded-full transition-all",
+                                            barPct >= 75 ? "bg-emerald-500" : barPct >= 50 ? "bg-amber-500" : "bg-red-500"
+                                        )}
+                                        style={{ width: `${barPct}%` }}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+                <Separator />
+                <div className="px-4 py-2.5 flex items-center justify-between bg-muted/30">
+                    <span className="text-xs font-medium">Total</span>
+                    <span className="text-sm font-bold font-mono">
+                        {score.totalScore}<span className="text-xs text-muted-foreground">/{maxTotal}</span>
+                    </span>
+                </div>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+// ── Rank Badge ───────────────────────────────────────────────────────────────
+
+function RankBadge({ rank }: { rank: number }) {
+    if (rank === 1) {
+        return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700">
+                <Trophy className="h-3 w-3" />
+                1st
+            </span>
+        );
+    }
+    if (rank === 2) {
+        return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700">
+                2nd
+            </span>
+        );
+    }
+    if (rank === 3) {
+        return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 border border-orange-300 text-xs font-bold dark:bg-orange-950 dark:text-orange-300 dark:border-orange-700">
+                3rd
+            </span>
+        );
+    }
+    return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground border text-xs font-medium">
+            #{rank}
+        </span>
+    );
+}
+
+// ── Main Component ───────────────────────────────────────────────────────────
+
 export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditInfo = false, statusFilters, useJuryModal = false }: SubmissionsViewerProps) {
     const firestore = useFirestore();
     const [submissions, setSubmissions] = useState<EnrichedSubmission[]>([]);
     const [formConfig, setFormConfig] = useState<FormConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState<EnrichedSubmission | null>(null);
+
+    // Jury scores state (only fetched when showAuditInfo is true = Super Admin)
+    const [juryScores, setJuryScores] = useState<JuryScore[]>([]);
+    const [juryNames, setJuryNames] = useState<string[]>([]);
 
     useEffect(() => {
         if (!firestore) return;
@@ -102,6 +231,27 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                 });
                 const filtered = statusFilters ? subs.filter((s) => statusFilters.includes(s.status)) : subs;
                 setSubmissions(filtered);
+
+                // Fetch jury scores if super admin view
+                if (showAuditInfo && filtered.length > 0) {
+                    const scoresQuery = query(
+                        collection(firestore, "jury_scores"),
+                        where("formConfigurationId", "==", categoryId)
+                    );
+                    const scoresSnap = await getDocs(scoresQuery);
+                    const allScores: JuryScore[] = scoresSnap.docs.map((d) => ({
+                        submissionId: d.data().submissionId,
+                        juryEmail: d.data().juryEmail,
+                        scores: d.data().scores || {},
+                        totalScore: d.data().totalScore || 0,
+                        segmentName: d.data().segmentName || "",
+                    }));
+                    setJuryScores(allScores);
+
+                    // Get unique jury names
+                    const uniqueJury = [...new Set(allScores.map((s) => s.juryEmail))].sort();
+                    setJuryNames(uniqueJury);
+                }
             } catch (error) {
                 console.error("Error fetching submissions:", error);
             } finally {
@@ -115,9 +265,43 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
         setSubmissions((prev) =>
             prev.map((s) => (s.id === id ? { ...s, status } : s))
         );
-        // Also update the selected submission so modal reflects the change immediately
         setSelectedSubmission((prev) => (prev?.id === id ? { ...prev, status } : prev));
     };
+
+    // Compute averages and ranks
+    const segment = formConfig ? getSegmentForCategory(formConfig.categoryName) : "Organization";
+    const parameters = SCORING_PARAMETERS[segment] || [];
+    const maxTotal = parameters.reduce((a, p) => a + p.maxScore, 0);
+
+    const submissionStats = useMemo(() => {
+        if (!showAuditInfo || juryNames.length === 0) return {};
+
+        const stats: Record<string, { avg: number; rank: number }> = {};
+
+        // Compute average for each submission
+        const avgEntries: { id: string; avg: number }[] = [];
+        submissions.forEach((sub) => {
+            const subScores = juryScores.filter((s) => s.submissionId === sub.id);
+            if (subScores.length > 0) {
+                const avg = Math.round(subScores.reduce((a, s) => a + s.totalScore, 0) / subScores.length * 10) / 10;
+                avgEntries.push({ id: sub.id, avg });
+            } else {
+                avgEntries.push({ id: sub.id, avg: 0 });
+            }
+        });
+
+        // Sort by avg descending for rank
+        const sorted = [...avgEntries].sort((a, b) => b.avg - a.avg);
+        sorted.forEach((entry, idx) => {
+            // Handle ties: same rank for same score
+            const rank = idx === 0 ? 1 : (entry.avg === sorted[idx - 1].avg ? stats[sorted[idx - 1].id].rank : idx + 1);
+            stats[entry.id] = { avg: entry.avg, rank: entry.avg > 0 ? rank : 0 };
+        });
+
+        return stats;
+    }, [submissions, juryScores, juryNames, showAuditInfo]);
+
+    const hasJuryData = showAuditInfo && juryNames.length > 0;
 
     if (loading) {
         return (
@@ -138,6 +322,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     <h2 className="text-xl font-bold font-headline">{categoryName}</h2>
                     <p className="text-sm text-muted-foreground">
                         {submissions.length} submission{submissions.length !== 1 ? "s" : ""}
+                        {hasJuryData && ` · ${juryNames.length} jury member${juryNames.length !== 1 ? "s" : ""}`}
                     </p>
                 </div>
             </div>
@@ -152,23 +337,57 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                 </Card>
             ) : (
                 <Card>
-                    <CardHeader>
-                        <CardTitle className="text-lg">Submissions</CardTitle>
+                    <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">Submissions</CardTitle>
+                            {hasJuryData && (
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Star className="h-3.5 w-3.5" />
+                                    Click score to see breakdown
+                                </div>
+                            )}
+                        </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="border rounded-md">
+                        <div className="border rounded-md overflow-x-auto">
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead className="w-[60px]">#</TableHead>
-                                        <TableHead className="w-[100px]">View</TableHead>
-                                        <TableHead>Submitted At</TableHead>
-                                        <TableHead className="w-[120px]">Status</TableHead>
+                                        <TableHead className="w-[50px]">#</TableHead>
+                                        <TableHead className="w-[80px]">View</TableHead>
+                                        <TableHead className="w-[170px]">Submitted At</TableHead>
+                                        <TableHead className="w-[130px]">Status</TableHead>
+                                        {hasJuryData && juryNames.map((email) => (
+                                            <TableHead key={email} className="text-center min-w-[100px]">
+                                                <div className="flex flex-col items-center gap-0.5">
+                                                    <span className="text-xs font-medium truncate max-w-[100px]" title={email}>
+                                                        {email.split("@")[0]}
+                                                    </span>
+                                                </div>
+                                            </TableHead>
+                                        ))}
+                                        {hasJuryData && (
+                                            <TableHead className="text-center min-w-[80px]">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <TrendingUp className="h-3 w-3" />
+                                                    Avg
+                                                </div>
+                                            </TableHead>
+                                        )}
+                                        {hasJuryData && (
+                                            <TableHead className="text-center min-w-[70px]">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <Trophy className="h-3 w-3" />
+                                                    Rank
+                                                </div>
+                                            </TableHead>
+                                        )}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {submissions.map((sub, idx) => {
                                         const statusCfg = STATUS_BADGE[sub.status];
+                                        const stats = submissionStats[sub.id];
                                         return (
                                             <TableRow key={sub.id}>
                                                 <TableCell className="font-mono text-muted-foreground">
@@ -205,6 +424,45 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                                         {statusCfg.label}
                                                     </Badge>
                                                 </TableCell>
+                                                {hasJuryData && juryNames.map((email) => {
+                                                    const score = juryScores.find(
+                                                        (s) => s.submissionId === sub.id && s.juryEmail === email
+                                                    );
+                                                    return (
+                                                        <TableCell key={email} className="text-center">
+                                                            {score ? (
+                                                                <ScoreBreakdownPopover
+                                                                    score={score}
+                                                                    juryEmail={email}
+                                                                    parameters={parameters}
+                                                                />
+                                                            ) : (
+                                                                <span className="text-xs text-muted-foreground">—</span>
+                                                            )}
+                                                        </TableCell>
+                                                    );
+                                                })}
+                                                {hasJuryData && (
+                                                    <TableCell className="text-center">
+                                                        {stats && stats.avg > 0 ? (
+                                                            <span className="font-mono font-bold text-sm">
+                                                                {stats.avg}
+                                                                <span className="text-[10px] text-muted-foreground">/{maxTotal}</span>
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-muted-foreground">—</span>
+                                                        )}
+                                                    </TableCell>
+                                                )}
+                                                {hasJuryData && (
+                                                    <TableCell className="text-center">
+                                                        {stats && stats.rank > 0 ? (
+                                                            <RankBadge rank={stats.rank} />
+                                                        ) : (
+                                                            <span className="text-xs text-muted-foreground">—</span>
+                                                        )}
+                                                    </TableCell>
+                                                )}
                                             </TableRow>
                                         );
                                     })}
