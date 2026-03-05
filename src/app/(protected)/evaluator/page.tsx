@@ -14,7 +14,7 @@ export default function EvaluatorPage() {
                     categoryId={viewing.id}
                     categoryName={viewing.name}
                     onBack={() => setViewing(null)}
-                    showAuditInfo={false}
+                    showAuditInfo={true}
                 />
             </div>
         );
