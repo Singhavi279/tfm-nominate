@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
     Dialog,
     DialogContent,
@@ -10,11 +10,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle } from "lucide-react";
+import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { FormConfig } from "@/lib/types";
 import { ParsedSubmission } from "@/lib/actions";
 import { useFirestore, useUser } from "@/firebase";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, serverTimestamp, writeBatch, getDoc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import {
     Select,
@@ -32,9 +32,11 @@ interface SubmissionDetailModalProps {
     open: boolean;
     onClose: () => void;
     onStatusChange: (id: string, status: SubmissionStatus) => void;
+    onSubmissionUpdated?: (updated: ParsedSubmission) => void;
     readOnly?: boolean;
     showAuditInfo?: boolean;
 }
+const MASKED_PLACEHOLDER = "Prefer not to disclose";
 
 const STATUS_CONFIG: Record<SubmissionStatus, { label: string; icon: React.ReactNode; color: string; bg: string; border: string }> = {
     pending: {
@@ -73,13 +75,110 @@ export function SubmissionDetailModal({
     open,
     onClose,
     onStatusChange,
+    onSubmissionUpdated,
     readOnly = false,
     showAuditInfo = false,
 }: SubmissionDetailModalProps) {
     const firestore = useFirestore();
     const { user } = useUser();
     const [updating, setUpdating] = useState(false);
+    const [maskingField, setMaskingField] = useState<string | null>(null);
+    const [maskedData, setMaskedData] = useState<{ responses: Record<string, any>, attachments: Record<string, string> }>({ responses: {}, attachments: {} });
     const currentStatus = submission.status ?? "pending";
+
+    // Fetch the private_data/masking subcollection document when opened as Super Admin
+    useEffect(() => {
+        if (!open || !showAuditInfo || !firestore) return;
+
+        let isMounted = true;
+        async function fetchPrivateData() {
+            try {
+                const maskDocRef = doc(firestore, "users", submission.userId, "submissions", submission.id, "private_data", "masking");
+                const snap = await getDoc(maskDocRef);
+                if (snap.exists() && isMounted) {
+                    const data = snap.data();
+                    let fetchedResponses = {};
+                    let fetchedAttachments = {};
+                    try { if (data.responses) fetchedResponses = JSON.parse(data.responses); } catch { }
+                    try { if (data.attachments) fetchedAttachments = JSON.parse(data.attachments); } catch { }
+                    setMaskedData({ responses: fetchedResponses, attachments: fetchedAttachments });
+                } else if (isMounted) {
+                    setMaskedData({ responses: {}, attachments: {} });
+                }
+            } catch (err) {
+                console.error("Failed to fetch private masking data:", err);
+            }
+        }
+        fetchPrivateData();
+        return () => { isMounted = false; };
+    }, [open, showAuditInfo, firestore, submission.id, submission.userId]);
+
+    const handleToggleMask = async (qId: string, isFile: boolean, currentlyMasked: boolean, currentValue: any) => {
+        if (!firestore) return;
+        setMaskingField(qId);
+        
+        try {
+            const submissionRef = doc(firestore, "users", submission.userId, "submissions", submission.id);
+            const maskDocRef = doc(firestore, "users", submission.userId, "submissions", submission.id, "private_data", "masking");
+            
+            const batch = writeBatch(firestore);
+
+            // Clone current public state to update
+            const newPublicResponses = { ...submission.responses };
+            const newPublicAttachments = { ...submission.attachments };
+
+            // Clone current private state to update
+            const newPrivateResponses = { ...maskedData.responses };
+            const newPrivateAttachments = { ...maskedData.attachments };
+
+            if (currentlyMasked) {
+                // UNMASK: Move value from private_data back to public submission doc
+                const realValue = isFile ? newPrivateAttachments[qId] : newPrivateResponses[qId];
+                
+                if (isFile) {
+                    newPublicAttachments[qId] = realValue;
+                    delete newPrivateAttachments[qId];
+                } else {
+                    newPublicResponses[qId] = realValue;
+                    delete newPrivateResponses[qId];
+                }
+            } else {
+                // MASK: Move value into private_data, put placeholder in public doc
+                if (isFile) {
+                    newPrivateAttachments[qId] = currentValue;
+                    newPublicAttachments[qId] = MASKED_PLACEHOLDER;
+                } else {
+                    newPrivateResponses[qId] = currentValue;
+                    newPublicResponses[qId] = MASKED_PLACEHOLDER;
+                }
+            }
+
+            // Write to batch
+            batch.update(submissionRef, {
+                responses: JSON.stringify(newPublicResponses),
+                attachments: JSON.stringify(newPublicAttachments)
+            });
+            batch.set(maskDocRef, {
+                responses: JSON.stringify(newPrivateResponses),
+                attachments: JSON.stringify(newPrivateAttachments)
+            }, { merge: true });
+
+            await batch.commit();
+
+            // Update local React state instantly
+            setMaskedData({ responses: newPrivateResponses, attachments: newPrivateAttachments });
+            onSubmissionUpdated?.({
+                ...submission,
+                responses: newPublicResponses,
+                attachments: newPublicAttachments
+            });
+
+        } catch (err) {
+            console.error("Failed to toggle field mask:", err);
+        } finally {
+            setMaskingField(null);
+        }
+    };
 
     const handleStatusUpdate = async (newStatus: SubmissionStatus) => {
         if (!firestore || newStatus === currentStatus) return;
@@ -158,30 +257,83 @@ export function SubmissionDetailModal({
                                 <div className="space-y-4">
                                     {section.questions.map((q) => {
                                         const isFile = q.type === "FILE_UPLOAD";
-                                        const value = isFile
+                                        const rawPublicValue = isFile
                                             ? submission.attachments[q.id]
                                             : submission.responses[q.id];
-                                        const display = Array.isArray(value) ? value.join(", ") : value;
+                                        
+                                        const isMasked = rawPublicValue === MASKED_PLACEHOLDER;
+                                        
+                                        // Super Admin views the *real* value if masked, otherwise the public value
+                                        let finalValue = rawPublicValue;
+                                        if (isMasked && showAuditInfo) {
+                                            finalValue = isFile ? maskedData.attachments[q.id] : maskedData.responses[q.id];
+                                        }
+
+                                        const display = Array.isArray(finalValue) ? finalValue.join(", ") : finalValue;
 
                                         return (
-                                            <div key={q.id} className="rounded-lg border bg-muted/30 px-4 py-3">
-                                                <p className="text-xs text-muted-foreground mb-1">{q.title}</p>
+                                            <div key={q.id} className={cn(
+                                                "rounded-lg border bg-muted/30 px-4 py-3 relative group",
+                                                isMasked && showAuditInfo && "ring-1 ring-amber-400/50"
+                                            )}>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-xs text-muted-foreground">{q.title}</p>
+                                                        {isMasked && showAuditInfo && (
+                                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-1 text-amber-700 border-amber-400 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-700">
+                                                                <EyeOff className="h-2.5 w-2.5" />
+                                                                Masked
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* Mask Toggle Button for Super Admin */}
+                                                    {showAuditInfo && !readOnly && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className={cn(
+                                                                "h-6 w-6 rounded-full absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity",
+                                                                isMasked && "opacity-100 text-amber-600 hover:text-amber-700 bg-amber-100/50 hover:bg-amber-100",
+                                                                maskingField === q.id && "opacity-100"
+                                                            )}
+                                                            title={isMasked ? "Unmask field" : "Mask field"}
+                                                            disabled={maskingField === q.id}
+                                                            onClick={() => handleToggleMask(q.id, isFile, isMasked, rawPublicValue)}
+                                                        >
+                                                            {maskingField === q.id ? (
+                                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                            ) : isMasked ? (
+                                                                <Eye className="h-3.5 w-3.5" />
+                                                            ) : (
+                                                                <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            )}
+                                                        </Button>
+                                                    )}
+                                                </div>
+
                                                 {isFile ? (
                                                     display ? (
                                                         <a
                                                             href={display}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-1 text-sm text-primary hover:underline font-medium"
+                                                            className={cn(
+                                                                "inline-flex items-center gap-1 text-sm font-medium hover:underline",
+                                                                isMasked && !showAuditInfo ? "text-muted-foreground italic pointer-events-none" : "text-primary"
+                                                            )}
                                                         >
-                                                            <ExternalLink className="h-3.5 w-3.5" />
-                                                            View Attachment
+                                                            {isMasked && !showAuditInfo ? null : <ExternalLink className="h-3.5 w-3.5" />}
+                                                            {isMasked && !showAuditInfo ? MASKED_PLACEHOLDER : "View Attachment"}
                                                         </a>
                                                     ) : (
                                                         <p className="text-sm text-muted-foreground italic">No file uploaded</p>
                                                     )
                                                 ) : (
-                                                    <p className="text-sm font-medium whitespace-pre-wrap">
+                                                    <p className={cn(
+                                                        "text-sm whitespace-pre-wrap",
+                                                        isMasked && !showAuditInfo ? "text-muted-foreground italic" : "font-medium"
+                                                    )}>
                                                         {display || <span className="text-muted-foreground italic">No answer</span>}
                                                     </p>
                                                 )}

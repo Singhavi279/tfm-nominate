@@ -562,6 +562,13 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     onClose={() => setSelectedSubmission(null)}
                     onStatusChange={handleStatusChange}
                     showAuditInfo={showAuditInfo}
+                    onSubmissionUpdated={(updated) => {
+                        const enriched = updated as EnrichedSubmission;
+                        setSelectedSubmission(enriched);
+                        setSubmissions(prev => 
+                            prev.map(s => s.id === updated.id ? { ...s, ...enriched } : s)
+                        );
+                    }}
                 />
             )}
             {selectedSubmission && useJuryModal && (

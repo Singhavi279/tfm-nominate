@@ -112,6 +112,10 @@ service cloud.firestore {
       allow create: if isCreatingOwnSubmission(userId);
       allow update: if isSuperAdmin() || isEvaluatorStatusUpdate();
       allow delete: if false;
+
+      match /private_data/{doc} {
+        allow read, write: if isSuperAdmin();
+      }
     }
 
     /**
@@ -121,6 +125,10 @@ service cloud.firestore {
     match /{path=**}/submissions/{submissionId} {
       allow read: if isSuperAdmin() || isEvaluator() || isJury();
       allow update: if isSuperAdmin() || isEvaluatorStatusUpdate();
+
+      match /private_data/{doc} {
+        allow read, write: if isSuperAdmin();
+      }
     }
 
     /**

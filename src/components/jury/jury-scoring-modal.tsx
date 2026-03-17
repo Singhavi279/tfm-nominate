@@ -20,6 +20,8 @@ import { SCORING_PARAMETERS, getSegmentForCategory, ScoringParameter } from "@/l
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
+const MASKED_PLACEHOLDER = "Prefer not to disclose";
+
 interface JuryScoringModalProps {
     submission: ParsedSubmission & { status?: string };
     formConfig: FormConfig | null;
@@ -161,16 +163,17 @@ export function JuryScoringModal({
                                     <div className="space-y-4">
                                         {section.questions.map((q) => {
                                             const isFile = q.type === "FILE_UPLOAD";
-                                            const value = isFile
+                                            const rawValue = isFile
                                                 ? submission.attachments[q.id]
                                                 : submission.responses[q.id];
-                                            const display = Array.isArray(value) ? value.join(", ") : value;
+                                            const display = Array.isArray(rawValue) ? rawValue.join(", ") : rawValue;
+                                            const isMasked = rawValue === MASKED_PLACEHOLDER;
 
                                             return (
                                                 <div key={q.id} className="rounded-lg border bg-muted/30 px-4 py-3">
                                                     <p className="text-xs text-muted-foreground mb-1">{q.title}</p>
                                                     {isFile ? (
-                                                        display ? (
+                                                        display && !isMasked ? (
                                                             <a
                                                                 href={display}
                                                                 target="_blank"
@@ -181,10 +184,15 @@ export function JuryScoringModal({
                                                                 View Attachment
                                                             </a>
                                                         ) : (
-                                                            <p className="text-sm text-muted-foreground italic">No file uploaded</p>
+                                                            <p className="text-sm text-muted-foreground italic">
+                                                                {isMasked ? MASKED_PLACEHOLDER : "No file uploaded"}
+                                                            </p>
                                                         )
                                                     ) : (
-                                                        <p className="text-sm font-medium whitespace-pre-wrap">
+                                                        <p className={cn(
+                                                            "text-sm whitespace-pre-wrap",
+                                                            isMasked ? "text-muted-foreground italic" : "font-medium"
+                                                        )}>
                                                             {display || <span className="text-muted-foreground italic">No answer</span>}
                                                         </p>
                                                     )}
