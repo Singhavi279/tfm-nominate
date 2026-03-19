@@ -11,10 +11,12 @@ import { useFormContext } from "react-hook-form";
 
 interface QuestionRendererProps {
   question: Question;
+  existingAttachments?: Record<string, string>;
+  onRemoveExistingAttachment?: (questionId: string) => void;
   onFileChange: (questionId: string, file: File | null) => void;
 }
 
-export function QuestionRenderer({ question, onFileChange }: QuestionRendererProps) {
+export function QuestionRenderer({ question, existingAttachments, onRemoveExistingAttachment, onFileChange }: QuestionRendererProps) {
   const { control } = useFormContext();
 
   const renderField = (field: any) => {
@@ -28,7 +30,12 @@ export function QuestionRenderer({ question, onFileChange }: QuestionRendererPro
       case "CHECKBOX":
         return <CheckboxField field={field} question={question} />;
       case "FILE_UPLOAD":
-        return <FileUploadField question={question} onFileChange={onFileChange} />;
+        return <FileUploadField 
+                 question={question} 
+                 onFileChange={onFileChange} 
+                 existingUrl={existingAttachments?.[question.id]}
+                 onRemoveExisting={() => onRemoveExistingAttachment && onRemoveExistingAttachment(question.id)}
+               />;
       default:
         return null;
     }

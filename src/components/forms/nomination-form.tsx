@@ -14,8 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuestionRenderer } from "./question-renderer";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "../ui/checkbox";
 import { Label } from "../ui/label";
 import { useRouter } from "next/navigation";
@@ -35,6 +36,7 @@ export function NominationForm({ formConfig }: NominationFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [files, setFiles] = useState<FileStore>({});
+  const [existingAttachments, setExistingAttachments] = useState<Record<string, string>>({});
   const [declaration, setDeclaration] = useState(false);
 
   const draftRef = useMemoFirebase(() => {
@@ -93,6 +95,14 @@ export function NominationForm({ formConfig }: NominationFormProps) {
         // The `useDoc` hook returns a Firestore Timestamp. Convert it to ISO string for display.
         setLastSaved((draft.lastSavedAt as any).toDate().toISOString());
       }
+      if (draft.returnedAttachments) {
+        try {
+          const parsedAttachments = JSON.parse(draft.returnedAttachments);
+          setExistingAttachments(parsedAttachments);
+        } catch (e) {
+          console.error("Failed to parse draft returnedAttachments:", e);
+        }
+      }
     }
   }, [draft, methods]);
 
@@ -145,6 +155,14 @@ export function NominationForm({ formConfig }: NominationFormProps) {
     })
   }
 
+  const handleRemoveExistingAttachment = (questionId: string) => {
+    setExistingAttachments(prev => {
+      const next = { ...prev };
+      delete next[questionId];
+      return next;
+    });
+  };
+
   const onSubmit = async (data: any) => {
     if (!user || !firestore) return;
     setIsSubmitting(true);
@@ -152,7 +170,7 @@ export function NominationForm({ formConfig }: NominationFormProps) {
     let allRequiredFilesUploaded = true;
     formConfig.sections.forEach(section => {
       section.questions.forEach(q => {
-        if (q.type === 'FILE_UPLOAD' && q.required && !files[q.id]) {
+        if (q.type === 'FILE_UPLOAD' && q.required && !files[q.id] && !existingAttachments[q.id]) {
           allRequiredFilesUploaded = false;
           toast({
             title: "Missing required file",
@@ -191,6 +209,13 @@ export function NominationForm({ formConfig }: NominationFormProps) {
           const downloadURL = await getDownloadURL(snapshot.ref);
           attachmentUrls[questionId] = downloadURL;
         }
+      }
+
+      // Merge with existing attachments that weren't overwritten
+      for (const questionId in existingAttachments) {
+          if (!attachmentUrls[questionId]) {
+              attachmentUrls[questionId] = existingAttachments[questionId];
+          }
       }
 
       const batch = writeBatch(firestore);
@@ -251,6 +276,17 @@ export function NominationForm({ formConfig }: NominationFormProps) {
   return (
     <FormProvider {...methods}>
       <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-8">
+        
+        {draft?.changesRequestedNote && (
+          <Alert variant="destructive" className="bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-950/20 dark:border-orange-800 dark:text-orange-300">
+            <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+            <AlertTitle className="text-orange-800 dark:text-orange-300">Changes Requested</AlertTitle>
+            <AlertDescription className="text-orange-700/80 dark:text-orange-400/80 mt-1 whitespace-pre-wrap">
+              {draft.changesRequestedNote}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {formConfig.sections.map((section, index) => (
           <Card key={section.id}>
             <CardHeader>
@@ -258,7 +294,13 @@ export function NominationForm({ formConfig }: NominationFormProps) {
             </CardHeader>
             <CardContent className="space-y-6">
               {section.questions.map((question) => (
-                <QuestionRenderer key={question.id} question={question} onFileChange={handleFileChange} />
+                <QuestionRenderer 
+                    key={question.id} 
+                    question={question} 
+                    onFileChange={handleFileChange} 
+                    existingAttachments={existingAttachments}
+                    onRemoveExistingAttachment={handleRemoveExistingAttachment}
+                />
               ))}
             </CardContent>
           </Card>

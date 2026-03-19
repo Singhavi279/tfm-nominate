@@ -33,6 +33,11 @@ export type Draft = {
   formConfigurationId: string;
   lastSavedAt: Timestamp;
   formData: string; // A JSON string of the form responses.
+  // Fields set when a super admin requests changes on a submitted nomination:
+  changesRequestedNote?: string;
+  changesRequestedAt?: Timestamp;
+  changesRequestedBy?: string;
+  returnedAttachments?: string; // JSON string of attachment URLs from the original submission
 };
 
 export type Submission = {

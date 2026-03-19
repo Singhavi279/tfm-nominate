@@ -12,6 +12,7 @@ import {
     Pencil,
     Eye,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useUser, useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, orderBy, query } from "firebase/firestore";
 import { FormConfig, Draft, Submission } from "@/lib/types";
@@ -190,14 +191,23 @@ export function UserActivityPanel() {
                                         day: "2-digit", month: "short", year: "numeric",
                                     });
                                     return (
-                                        <li key={draft.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                                            <div className="min-w-0">
-                                                <p className="text-sm font-medium truncate">{categoryName}</p>
-                                                <p className="text-xs text-muted-foreground">Last saved {date}</p>
+                                        <li key={draft.id} className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-sm font-medium truncate">{categoryName}</p>
+                                                    {draft.changesRequestedNote && (
+                                                        <Badge variant="destructive" className="px-1.5 py-0 text-[10px] uppercase tracking-wider h-4 shrink-0">
+                                                            Action Required
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-muted-foreground mt-0.5">
+                                                    {draft.changesRequestedNote ? "Please review requested changes" : `Last saved ${date}`}
+                                                </p>
                                             </div>
-                                            <Button asChild size="sm" variant="outline" className="shrink-0 gap-1">
+                                            <Button asChild size="sm" variant={draft.changesRequestedNote ? "default" : "outline"} className="shrink-0 self-start sm:self-auto gap-1">
                                                 <Link href={`/nominate/${draft.formConfigurationId}`}>
-                                                    Continue <ArrowRight className="h-3.5 w-3.5" />
+                                                    {draft.changesRequestedNote ? "Review" : "Continue"} <ArrowRight className="h-3.5 w-3.5" />
                                                 </Link>
                                             </Button>
                                         </li>

@@ -10,9 +10,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { FormConfig } from "@/lib/types";
-import { ParsedSubmission } from "@/lib/actions";
+import { ParsedSubmission, requestChangesOnSubmission } from "@/lib/actions";
 import { useFirestore, useUser } from "@/firebase";
 import { doc, updateDoc, serverTimestamp, writeBatch, getDoc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 
 export type SubmissionStatus = "pending" | "approved" | "issues" | "rejected";
 
@@ -33,6 +35,7 @@ interface SubmissionDetailModalProps {
     onClose: () => void;
     onStatusChange: (id: string, status: SubmissionStatus) => void;
     onSubmissionUpdated?: (updated: ParsedSubmission) => void;
+    onSubmissionRemoved?: (id: string) => void;
     readOnly?: boolean;
     showAuditInfo?: boolean;
 }
@@ -55,7 +58,7 @@ const STATUS_CONFIG: Record<SubmissionStatus, { label: string; icon: React.React
     },
     issues: {
         label: "Ok, With Issues",
-        icon: <AlertTriangle className="h-3.5 w-3.5" />, // Or another icon like AlertCircle
+        icon: <AlertTriangle className="h-3.5 w-3.5" />,
         color: "text-yellow-700 dark:text-yellow-400",
         bg: "bg-yellow-50 dark:bg-yellow-950",
         border: "border-yellow-400",
@@ -76,15 +79,22 @@ export function SubmissionDetailModal({
     onClose,
     onStatusChange,
     onSubmissionUpdated,
+    onSubmissionRemoved,
     readOnly = false,
     showAuditInfo = false,
 }: SubmissionDetailModalProps) {
     const firestore = useFirestore();
     const { user } = useUser();
+    const { toast } = useToast();
     const [updating, setUpdating] = useState(false);
     const [maskingField, setMaskingField] = useState<string | null>(null);
     const [maskedData, setMaskedData] = useState<{ responses: Record<string, any>, attachments: Record<string, string> }>({ responses: {}, attachments: {} });
     const currentStatus = submission.status ?? "pending";
+
+    // Request Changes state
+    const [showRequestChanges, setShowRequestChanges] = useState(false);
+    const [requestChangesNote, setRequestChangesNote] = useState("");
+    const [requestingChanges, setRequestingChanges] = useState(false);
 
     // Fetch the private_data/masking subcollection document when opened as Super Admin
     useEffect(() => {
@@ -112,6 +122,14 @@ export function SubmissionDetailModal({
         fetchPrivateData();
         return () => { isMounted = false; };
     }, [open, showAuditInfo, firestore, submission.id, submission.userId]);
+
+    // Reset request changes UI when modal closes/opens
+    useEffect(() => {
+        if (!open) {
+            setShowRequestChanges(false);
+            setRequestChangesNote("");
+        }
+    }, [open]);
 
     const handleToggleMask = async (qId: string, isFile: boolean, currentlyMasked: boolean, currentValue: any) => {
         if (!firestore) return;
@@ -201,6 +219,52 @@ export function SubmissionDetailModal({
             console.error("Failed to update status:", err);
         } finally {
             setUpdating(false);
+        }
+    };
+
+    const handleRequestChanges = async () => {
+        if (!requestChangesNote.trim()) {
+            toast({
+                title: "Note required",
+                description: "Please provide a note explaining what changes are needed.",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        setRequestingChanges(true);
+        try {
+            const result = await requestChangesOnSubmission({
+                submissionId: submission.id,
+                userId: submission.userId,
+                formConfigurationId: submission.formConfigurationId,
+                note: requestChangesNote.trim(),
+                adminEmail: user?.email ?? "unknown",
+            });
+
+            if (result.error) {
+                toast({
+                    title: "Failed to request changes",
+                    description: result.error,
+                    variant: "destructive",
+                });
+            } else {
+                toast({
+                    title: "Changes Requested",
+                    description: "The nomination has been returned to the user as a draft with your note.",
+                });
+                onSubmissionRemoved?.(submission.id);
+                onClose();
+            }
+        } catch (err) {
+            console.error("Failed to request changes:", err);
+            toast({
+                title: "Error",
+                description: "An unexpected error occurred.",
+                variant: "destructive",
+            });
+        } finally {
+            setRequestingChanges(false);
         }
     };
 
@@ -351,34 +415,94 @@ export function SubmissionDetailModal({
 
                 {/* Footer: status controls — hidden in readOnly mode */}
                 {!readOnly && (
-                    <div className="shrink-0 border-t px-6 py-4 flex items-center justify-between gap-3 bg-background">
-                        <div className="flex items-center gap-3">
-                            <p className="text-sm text-muted-foreground font-medium">Mark status:</p>
-                            {updating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                        </div>
+                    <div className="shrink-0 border-t px-6 py-4 bg-background space-y-3">
+                        {/* Request Changes UI for Super Admin */}
+                        {showAuditInfo && showRequestChanges && (
+                            <div className="space-y-3 p-4 rounded-lg border border-orange-200 bg-orange-50/50 dark:bg-orange-950/20 dark:border-orange-800">
+                                <div className="flex items-center gap-2">
+                                    <RotateCcw className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                                    <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">Request Changes</p>
+                                </div>
+                                <p className="text-xs text-orange-700/80 dark:text-orange-400/70">
+                                    This will return the nomination to the user as a draft. They will see your note and can re-submit after making changes.
+                                </p>
+                                <Textarea
+                                    placeholder="Describe what changes are needed..."
+                                    value={requestChangesNote}
+                                    onChange={(e) => setRequestChangesNote(e.target.value)}
+                                    className="min-h-[80px] bg-white dark:bg-background border-orange-200 dark:border-orange-800 focus-visible:ring-orange-400"
+                                    disabled={requestingChanges}
+                                />
+                                <div className="flex items-center gap-2 justify-end">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            setShowRequestChanges(false);
+                                            setRequestChangesNote("");
+                                        }}
+                                        disabled={requestingChanges}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        className="bg-orange-600 hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-800"
+                                        onClick={handleRequestChanges}
+                                        disabled={requestingChanges || !requestChangesNote.trim()}
+                                    >
+                                        {requestingChanges && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                                        Confirm & Return to User
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
 
-                        <Select
-                            value={currentStatus}
-                            onValueChange={(val) => handleStatusUpdate(val as SubmissionStatus)}
-                            disabled={updating}
-                        >
-                            <SelectTrigger className="w-[180px]">
-                                <SelectValue placeholder="Select Status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {(["pending", "approved", "issues", "rejected"] as SubmissionStatus[]).map((s) => (
-                                    <SelectItem key={s} value={s}>
-                                        <div className="flex items-center gap-2">
-                                            {STATUS_CONFIG[s].icon}
-                                            {STATUS_CONFIG[s].label}
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                                <p className="text-sm text-muted-foreground font-medium">Mark status:</p>
+                                {updating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {/* Request Changes button — Super Admin only */}
+                                {showAuditInfo && !showRequestChanges && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50 hover:text-orange-800 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-950"
+                                        onClick={() => setShowRequestChanges(true)}
+                                    >
+                                        <RotateCcw className="h-3.5 w-3.5" />
+                                        Request Changes
+                                    </Button>
+                                )}
+
+                                <Select
+                                    value={currentStatus}
+                                    onValueChange={(val) => handleStatusUpdate(val as SubmissionStatus)}
+                                    disabled={updating}
+                                >
+                                    <SelectTrigger className="w-[180px]">
+                                        <SelectValue placeholder="Select Status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(["pending", "approved", "issues", "rejected"] as SubmissionStatus[]).map((s) => (
+                                            <SelectItem key={s} value={s}>
+                                                <div className="flex items-center gap-2">
+                                                    {STATUS_CONFIG[s].icon}
+                                                    {STATUS_CONFIG[s].label}
+                                                </div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
                         {/* Audit trail — visible to Super Admin only */}
                         {showAuditInfo && submission.statusUpdatedBy && (
-                            <p className="text-xs text-muted-foreground mt-1 text-right">
+                            <p className="text-xs text-muted-foreground text-right">
                                 Updated by <span className="font-medium">{submission.statusUpdatedBy}</span>
                                 {submission.statusUpdatedAt && ` on ${new Date(submission.statusUpdatedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`}
                             </p>

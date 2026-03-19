@@ -12,10 +12,12 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 interface FileUploadFieldProps {
   question: Question;
+  existingUrl?: string;
+  onRemoveExisting?: () => void;
   onFileChange: (questionId: string, file: File | null) => void;
 }
 
-export function FileUploadField({ question, onFileChange }: FileUploadFieldProps) {
+export function FileUploadField({ question, onFileChange, existingUrl, onRemoveExisting }: FileUploadFieldProps) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -92,6 +94,37 @@ export function FileUploadField({ question, onFileChange }: FileUploadFieldProps
         <Button variant="ghost" size="icon" onClick={removeFile}>
           <X className="h-4 w-4" />
         </Button>
+      </div>
+    );
+  }
+
+  if (existingUrl) {
+    return (
+      <div className="w-full flex items-center justify-between p-3 rounded-md border border-orange-200 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-800">
+        <div className="flex items-center gap-3">
+          <File className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">Previous file uploaded</span>
+            <a href={existingUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-orange-600 hover:underline dark:text-orange-400">
+              Click to view file
+            </a>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+              Replace
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onRemoveExisting}>
+              <X className="h-4 w-4" />
+            </Button>
+        </div>
+        <Input
+          ref={inputRef}
+          type="file"
+          accept=".pdf"
+          className="hidden"
+          onChange={(e) => handleFile(e.target.files ? e.target.files[0] : null)}
+        />
       </div>
     );
   }
