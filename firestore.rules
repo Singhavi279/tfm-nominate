@@ -98,8 +98,8 @@ service cloud.firestore {
     /** Drafts — user-owned. */
     match /users/{userId}/drafts/{formConfigurationId} {
       allow get, list: if isOwner(userId);
-      allow write: if canWriteDraft(userId);
-      allow delete: if isExistingOwner(userId);
+      allow write: if canWriteDraft(userId) || isSuperAdmin();
+      allow delete: if isExistingOwner(userId) || isSuperAdmin();
     }
 
     /**
@@ -111,7 +111,7 @@ service cloud.firestore {
       allow get, list: if isOwner(userId) || isSuperAdmin() || isEvaluator() || isJury();
       allow create: if isCreatingOwnSubmission(userId);
       allow update: if isSuperAdmin() || isEvaluatorStatusUpdate();
-      allow delete: if false;
+      allow delete: if isSuperAdmin();
 
       match /private_data/{doc} {
         allow read, write: if isSuperAdmin();
