@@ -136,52 +136,7 @@ export async function getSubmissionCounts(): Promise<Record<string, number>> {
   }
 }
 
-// REQUEST CHANGES ACTION
-export async function requestChangesOnSubmission(input: {
-  submissionId: string;
-  userId: string;
-  formConfigurationId: string;
-  note: string;
-  adminEmail: string;
-}) {
-  const adminDb = getAdminDb();
-  try {
-    // 1. Read the submission document
-    const submissionRef = adminDb.doc(`users/${input.userId}/submissions/${input.submissionId}`);
-    const submissionSnap = await submissionRef.get();
 
-    if (!submissionSnap.exists) {
-      return { error: "Submission not found." };
-    }
-
-    const submissionData = submissionSnap.data()!;
-
-    // 2. Create a draft from the submission data
-    const draftRef = adminDb.doc(`users/${input.userId}/drafts/${input.formConfigurationId}`);
-    const draftData = {
-      userId: input.userId,
-      formConfigurationId: input.formConfigurationId,
-      formData: submissionData.responses || "{}",
-      lastSavedAt: FieldValue.serverTimestamp(),
-      changesRequestedNote: input.note,
-      changesRequestedAt: FieldValue.serverTimestamp(),
-      changesRequestedBy: input.adminEmail,
-      returnedAttachments: submissionData.attachments || "{}",
-    };
-
-    // 3. Use a batch to atomically write draft & delete submission
-    const batch = adminDb.batch();
-    batch.set(draftRef, draftData);
-    batch.delete(submissionRef);
-    await batch.commit();
-
-    revalidatePath("/dashboard");
-    return { success: true };
-  } catch (error: any) {
-    console.error("Error requesting changes:", error);
-    return { error: error.message || "An unknown error occurred." };
-  }
-}
 
 // AI ASSISTANT ACTION
 export async function getAIAssistance(input: AssistNominationTextInput) {

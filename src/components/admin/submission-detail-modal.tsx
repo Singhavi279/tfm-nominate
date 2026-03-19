@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { ExternalLink, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { FormConfig } from "@/lib/types";
-import { ParsedSubmission, requestChangesOnSubmission } from "@/lib/actions";
+import { ParsedSubmission } from "@/lib/actions";
 import { useFirestore, useUser } from "@/firebase";
 import { doc, updateDoc, serverTimestamp, writeBatch, getDoc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
@@ -223,6 +223,7 @@ export function SubmissionDetailModal({
     };
 
     const handleRequestChanges = async () => {
+        if (!firestore) return;
         if (!requestChangesNote.trim()) {
             toast({
                 title: "Note required",
@@ -234,33 +235,37 @@ export function SubmissionDetailModal({
 
         setRequestingChanges(true);
         try {
-            const result = await requestChangesOnSubmission({
-                submissionId: submission.id,
+            const batch = writeBatch(firestore);
+            const draftRef = doc(firestore, "users", submission.userId, "drafts", submission.formConfigurationId);
+            const submissionRef = doc(firestore, "users", submission.userId, "submissions", submission.id);
+
+            const draftData = {
                 userId: submission.userId,
                 formConfigurationId: submission.formConfigurationId,
-                note: requestChangesNote.trim(),
-                adminEmail: user?.email ?? "unknown",
-            });
+                formData: JSON.stringify(submission.responses),
+                lastSavedAt: serverTimestamp(),
+                changesRequestedNote: requestChangesNote.trim(),
+                changesRequestedAt: serverTimestamp(),
+                changesRequestedBy: user?.email ?? "unknown",
+                returnedAttachments: JSON.stringify(submission.attachments),
+            };
 
-            if (result.error) {
-                toast({
-                    title: "Failed to request changes",
-                    description: result.error,
-                    variant: "destructive",
-                });
-            } else {
-                toast({
-                    title: "Changes Requested",
-                    description: "The nomination has been returned to the user as a draft with your note.",
-                });
-                onSubmissionRemoved?.(submission.id);
-                onClose();
-            }
-        } catch (err) {
+            batch.set(draftRef, draftData, { merge: true });
+            batch.delete(submissionRef);
+            await batch.commit();
+
+            toast({
+                title: "Changes Requested",
+                description: "The nomination has been returned to the user as a draft with your note.",
+            });
+            onSubmissionRemoved?.(submission.id);
+            onClose();
+
+        } catch (err: any) {
             console.error("Failed to request changes:", err);
             toast({
-                title: "Error",
-                description: "An unexpected error occurred.",
+                title: "Failed to request changes",
+                description: err.message || "An unexpected error occurred.",
                 variant: "destructive",
             });
         } finally {
