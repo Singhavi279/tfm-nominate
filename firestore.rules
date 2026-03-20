@@ -136,11 +136,12 @@ service cloud.firestore {
      * Jury can read/write their own scores. Super admins and evaluators can read all.
      */
     match /jury_scores/{scoreId} {
-      allow read: if isSuperAdmin() || isEvaluator() || (isJury() && resource.data.juryEmail == request.auth.token.email);
+      // get: jury can read any specific doc (docId is already scoped as {submissionId}__{email})
+      allow get: if isSuperAdmin() || isEvaluator() || isJury();
+      allow list: if isSuperAdmin() || isEvaluator();
       allow create: if isJury() && request.resource.data.juryEmail == request.auth.token.email;
       allow update: if isJury() && resource.data.juryEmail == request.auth.token.email;
       allow delete: if isSuperAdmin();
-      allow list: if isSuperAdmin() || isEvaluator();
     }
   }
 }

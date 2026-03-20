@@ -8,19 +8,34 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ColorSlider } from "@/components/ui/color-slider";
 import { ExternalLink, Loader2, CheckCircle2, Star } from "lucide-react";
 import { FormConfig } from "@/lib/types";
 import { ParsedSubmission } from "@/lib/actions";
 import { useFirestore, useUser } from "@/firebase";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { SCORING_PARAMETERS, getSegmentForCategory, ScoringParameter } from "@/lib/scoring-parameters";
+import { SCORING_PARAMETERS, getSegmentForCategory } from "@/lib/scoring-parameters";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 const MASKED_PLACEHOLDER = "Prefer not to disclose";
+const MIN_SCORE = 1;
+const DISPLAY_MAX = 10;
+
+/** Returns an HSL color string: red (1) → yellow (5) → green (10). */
+function scoreColor(value: number): string {
+    const ratio = Math.max(0, Math.min((value - 1) / 9, 1));
+    const hue = ratio * 130;
+    return `hsl(${hue}, 80%, 42%)`;
+}
+
+function scoreBg(value: number): string {
+    const ratio = Math.max(0, Math.min((value - 1) / 9, 1));
+    const hue = ratio * 130;
+    return `hsl(${hue}, 75%, 94%)`;
+}
 
 interface JuryScoringModalProps {
     submission: ParsedSubmission & { status?: string };
@@ -61,32 +76,27 @@ export function JuryScoringModal({
                     setScores(snap.data().scores || {});
                     setAlreadyScored(true);
                 } else {
-                    // Initialize all scores to 0
                     const initial: Record<string, number> = {};
-                    parameters.forEach((p) => { initial[p.name] = 0; });
+                    parameters.forEach((p) => { initial[p.name] = MIN_SCORE; });
                     setScores(initial);
                     setAlreadyScored(false);
                 }
             })
             .catch(() => {
                 const initial: Record<string, number> = {};
-                parameters.forEach((p) => { initial[p.name] = 0; });
+                parameters.forEach((p) => { initial[p.name] = MIN_SCORE; });
                 setScores(initial);
             })
             .finally(() => setLoadingScores(false));
     }, [open, user?.email, docId]);
 
-    function updateScore(paramName: string, value: string, maxScore: number) {
-        const num = parseInt(value, 10);
-        if (isNaN(num)) {
-            setScores((prev) => ({ ...prev, [paramName]: 0 }));
-        } else {
-            setScores((prev) => ({ ...prev, [paramName]: Math.min(Math.max(0, num), maxScore) }));
-        }
+    function updateScore(paramName: string, value: number) {
+        setScores((prev) => ({ ...prev, [paramName]: Math.min(Math.max(MIN_SCORE, value), 10) }));
     }
 
     const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
-    const maxTotal = parameters.reduce((a, p) => a + p.maxScore, 0);
+    const maxTotal = parameters.reduce((a, p) => a + p.maxScore, 0); // 40
+    const displayedTotal = maxTotal > 0 ? (totalScore / maxTotal) * DISPLAY_MAX : 0;
 
     async function handleSubmit() {
         if (!user?.email) return;
@@ -99,6 +109,7 @@ export function JuryScoringModal({
                 segmentName,
                 scores,
                 totalScore,
+                displayedTotal: parseFloat(displayedTotal.toFixed(1)),
             };
             await setDoc(doc(firestore, "jury_scores", docId), {
                 ...scorePayload,
@@ -106,7 +117,7 @@ export function JuryScoringModal({
             });
             toast({
                 title: alreadyScored ? "Scores updated" : "Scores submitted",
-                description: `Total: ${totalScore}/${maxTotal}`,
+                description: `Total: ${displayedTotal.toFixed(1)}/${DISPLAY_MAX}`,
             });
             setAlreadyScored(true);
             onScoreSubmitted?.(scorePayload);
@@ -221,43 +232,61 @@ export function JuryScoringModal({
                             </div>
                         ) : (
                             <>
-                                <div className="space-y-4 flex-1">
-                                    {parameters.map((param) => (
-                                        <div key={param.name}>
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <label className="text-sm font-medium leading-tight">{param.name}</label>
-                                                <span className="text-xs text-muted-foreground font-mono">
-                                                    max {param.maxScore}
-                                                </span>
+                                <div className="space-y-5 flex-1">
+                                    {parameters.map((param) => {
+                                        const val = scores[param.name] ?? MIN_SCORE;
+                                        const color = scoreColor(val);
+                                        const bg = scoreBg(val);
+
+                                        return (
+                                            <div key={param.name}>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-sm font-medium leading-tight">{param.name}</label>
+                                                    <span
+                                                        className="text-sm font-bold font-mono rounded-md px-2.5 py-0.5 min-w-[2.5rem] text-center transition-all duration-200"
+                                                        style={{ color, backgroundColor: bg }}
+                                                    >
+                                                        {val}
+                                                    </span>
+                                                </div>
+                                                <ColorSlider
+                                                    min={MIN_SCORE}
+                                                    max={param.maxScore}
+                                                    step={1}
+                                                    value={[val]}
+                                                    onValueChange={([v]) => updateScore(param.name, v)}
+                                                    trackColor={color}
+                                                    thumbColor={color}
+                                                />
+                                                <div className="flex justify-between mt-1">
+                                                    <span className="text-[10px] text-muted-foreground">{MIN_SCORE}</span>
+                                                    <span className="text-[10px] text-muted-foreground">{param.maxScore}</span>
+                                                </div>
                                             </div>
-                                            <Input
-                                                type="number"
-                                                min={0}
-                                                max={param.maxScore}
-                                                value={scores[param.name] ?? 0}
-                                                onChange={(e) => updateScore(param.name, e.target.value, param.maxScore)}
-                                                className="h-9 text-center font-mono font-semibold"
-                                            />
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
                                 <Separator className="my-4" />
 
-                                {/* Total */}
-                                <div className="flex items-center justify-between mb-4">
-                                    <span className="text-sm font-bold">Total Score</span>
-                                    <span className={cn(
-                                        "text-2xl font-bold font-mono",
-                                        totalScore > 0 ? "text-primary" : "text-muted-foreground"
-                                    )}>
-                                        {totalScore}<span className="text-sm text-muted-foreground">/{maxTotal}</span>
+                                {/* Total — displayed out of 10 */}
+                                <div
+                                    className="rounded-xl p-4 mb-4 text-center transition-all duration-300"
+                                    style={{ backgroundColor: scoreBg(Math.round(displayedTotal) || 1) }}
+                                >
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Total Score</p>
+                                    <span
+                                        className="text-4xl font-black font-mono transition-colors duration-300"
+                                        style={{ color: scoreColor(Math.round(displayedTotal) || 1) }}
+                                    >
+                                        {displayedTotal.toFixed(1)}
                                     </span>
+                                    <span className="text-lg text-muted-foreground font-medium">/{DISPLAY_MAX}</span>
                                 </div>
 
                                 <Button
                                     onClick={handleSubmit}
-                                    disabled={saving || totalScore === 0}
+                                    disabled={saving}
                                     className="w-full gap-2"
                                     size="lg"
                                 >
