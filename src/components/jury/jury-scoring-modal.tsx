@@ -7,11 +7,21 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ColorSlider } from "@/components/ui/color-slider";
-import { ExternalLink, Loader2, CheckCircle2, Star } from "lucide-react";
+import { ExternalLink, Loader2, CheckCircle2, Star, AlertTriangle, Lock } from "lucide-react";
 import { FormConfig } from "@/lib/types";
 import { ParsedSubmission } from "@/lib/actions";
 import { useFirestore, useUser } from "@/firebase";
@@ -63,6 +73,7 @@ export function JuryScoringModal({
     const [saving, setSaving] = useState(false);
     const [loadingScores, setLoadingScores] = useState(true);
     const [alreadyScored, setAlreadyScored] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
 
     const docId = `${submission.id}__${user?.email ?? "unknown"}`;
 
@@ -91,6 +102,7 @@ export function JuryScoringModal({
     }, [open, user?.email, docId]);
 
     function updateScore(paramName: string, value: number) {
+        if (alreadyScored) return; // Locked after submission
         setScores((prev) => ({ ...prev, [paramName]: Math.min(Math.max(MIN_SCORE, value), 10) }));
     }
 
@@ -116,10 +128,11 @@ export function JuryScoringModal({
                 scoredAt: serverTimestamp(),
             });
             toast({
-                title: alreadyScored ? "Scores updated" : "Scores submitted",
+                title: "Scores submitted",
                 description: `Total: ${displayedTotal.toFixed(1)}/${DISPLAY_MAX}`,
             });
             setAlreadyScored(true);
+            setShowConfirm(false);
             onScoreSubmitted?.(scorePayload);
         } catch (err: any) {
             toast({ title: "Error saving scores", description: err.message, variant: "destructive" });
@@ -257,6 +270,7 @@ export function JuryScoringModal({
                                                     onValueChange={([v]) => updateScore(param.name, v)}
                                                     trackColor={color}
                                                     thumbColor={color}
+                                                    disabled={alreadyScored}
                                                 />
                                                 <div className="flex justify-between mt-1">
                                                     <span className="text-[10px] text-muted-foreground">{MIN_SCORE}</span>
@@ -284,15 +298,55 @@ export function JuryScoringModal({
                                     <span className="text-lg text-muted-foreground font-medium">/{DISPLAY_MAX}</span>
                                 </div>
 
-                                <Button
-                                    onClick={handleSubmit}
-                                    disabled={saving}
-                                    className="w-full gap-2"
-                                    size="lg"
-                                >
-                                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                                    {alreadyScored ? "Update Scores" : "Submit Scores"}
-                                </Button>
+                                {alreadyScored ? (
+                                    <div className="flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-muted text-muted-foreground">
+                                        <Lock className="h-4 w-4" />
+                                        <span className="text-sm font-medium">Scores Submitted & Locked</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex items-start gap-2 mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-800">
+                                            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                            <p className="text-xs text-amber-800 dark:text-amber-300">
+                                                Scores are <strong>final</strong> and cannot be changed once submitted. Please review carefully.
+                                            </p>
+                                        </div>
+                                        <Button
+                                            onClick={() => setShowConfirm(true)}
+                                            disabled={saving}
+                                            className="w-full gap-2"
+                                            size="lg"
+                                        >
+                                            Submit Scores
+                                        </Button>
+                                    </>
+                                )}
+
+                                {/* Confirmation dialog */}
+                                <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle className="flex items-center gap-2">
+                                                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                                                Confirm Score Submission
+                                            </AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                You are about to submit a total score of <strong className="text-foreground">{displayedTotal.toFixed(1)}/{DISPLAY_MAX}</strong>. This action is <strong className="text-destructive">irreversible</strong> — you will not be able to edit or update your scores after submission.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Go Back</AlertDialogCancel>
+                                            <AlertDialogAction
+                                                onClick={handleSubmit}
+                                                disabled={saving}
+                                                className="gap-2 bg-primary"
+                                            >
+                                                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                                                Confirm & Submit
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
                             </>
                         )}
                     </div>
