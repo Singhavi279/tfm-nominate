@@ -19,13 +19,33 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Loader2, XCircle, Eye } from "lucide-react";
+import { CheckCircle2, Loader2, XCircle, Eye, ClipboardList, Scale, Star } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, getDocs, collectionGroup } from "firebase/firestore";
 import { SubmissionsViewer } from "./submissions-viewer";
 import { useTableControls } from "@/hooks/use-table-controls";
 import { TableToolbar } from "@/components/ui/table-toolbar";
+
+export type PanelRole = "super_admin" | "evaluator" | "jury";
+
+const ROLE_CONFIG: Record<PanelRole, { title: string; description: string; icon: React.ReactNode }> = {
+  super_admin: {
+    title: "Form Configuration Status",
+    description: "Overview of all award categories — their form config status and submission counts.",
+    icon: <ClipboardList className="h-5 w-5 text-primary" />,
+  },
+  evaluator: {
+    title: "Award Categories",
+    description: "Browse nominations across all categories. Review, evaluate, and update the status of each submission.",
+    icon: <Scale className="h-5 w-5 text-primary" />,
+  },
+  jury: {
+    title: "Assigned Categories",
+    description: "Review approved nominations and score each submission using the evaluation criteria.",
+    icon: <Star className="h-5 w-5 text-primary" />,
+  },
+};
 
 // Enriched row type for the table
 interface ConfigRow {
@@ -43,12 +63,17 @@ export function ConfigStatusList({
   onViewCategory,
   statusFilters,
   assignedCategories,
+  role,
 }: {
   onViewCategory?: (id: string, name: string) => void;
   statusFilters?: string[];
   assignedCategories?: string[];
+  role?: PanelRole;
 } = {}) {
   const firestore = useFirestore();
+  const resolvedRole: PanelRole = role ?? (onViewCategory ? "evaluator" : "super_admin");
+  const isSuperAdmin = resolvedRole === "super_admin";
+  const roleConfig = ROLE_CONFIG[resolvedRole];
 
   const formConfigsQuery = useMemoFirebase(() => {
     return collection(firestore, 'form_configurations');
@@ -62,9 +87,6 @@ export function ConfigStatusList({
   const [juryScoredCounts, setJuryScoredCounts] = useState<Record<string, number>>({});
   const [countsLoading, setCountsLoading] = useState(true);
   const [viewingCategory, setViewingCategory] = useState<{ id: string; name: string } | null>(null);
-
-  // Whether the caller is Super Admin (no onViewCategory = internal viewer = Super Admin)
-  const isSuperAdmin = !onViewCategory;
 
   function handleView(id: string, name: string) {
     if (onViewCategory) {
@@ -222,13 +244,19 @@ export function ConfigStatusList({
     return null;
   }
 
+  // Column count for empty state
+  const colCount = isSuperAdmin ? 8 : 4;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Form Configuration Status</CardTitle>
-        <CardDescription>
-          Overview of all award categories — their form config status and submission counts.
-        </CardDescription>
+    <Card className="shadow-sm border-border/60">
+      <CardHeader className="pb-4">
+        <div className="flex items-center gap-2.5">
+          {roleConfig.icon}
+          <div>
+            <CardTitle className="text-xl">{roleConfig.title}</CardTitle>
+            <CardDescription className="mt-0.5">{roleConfig.description}</CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <TableToolbar
@@ -247,47 +275,55 @@ export function ConfigStatusList({
           sort={tableControls.sort}
           onSortToggle={tableControls.toggleSort}
         />
-        <div className="border rounded-md overflow-x-auto">
+        <div className="border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-[130px]">Segment</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="w-[110px] text-center">JSON Status</TableHead>
-                <TableHead className="w-[80px] text-center">Entries</TableHead>
+              <TableRow className="bg-muted/40">
+                <TableHead className="w-[120px] font-semibold">Segment</TableHead>
+                <TableHead className="font-semibold">Category</TableHead>
+                {isSuperAdmin && (
+                  <TableHead className="w-[110px] text-center font-semibold">JSON Status</TableHead>
+                )}
+                <TableHead className="w-[90px] text-center font-semibold">Entries</TableHead>
                 {isSuperAdmin && (
                   <>
-                    <TableHead className="w-[110px] text-center">EY Evaluated</TableHead>
-                    <TableHead className="w-[110px] text-center">Jury Assigned</TableHead>
-                    <TableHead className="w-[110px] text-center">Jury Evaluated</TableHead>
+                    <TableHead className="w-[110px] text-center font-semibold">EY Evaluated</TableHead>
+                    <TableHead className="w-[110px] text-center font-semibold">Jury Assigned</TableHead>
+                    <TableHead className="w-[110px] text-center font-semibold">Jury Evaluated</TableHead>
                   </>
                 )}
-                <TableHead className="w-[130px] text-center">Actions</TableHead>
+                <TableHead className="w-[130px] text-center font-semibold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {tableControls.filtered.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="text-muted-foreground">{row.segmentName}</TableCell>
-                  <TableCell className="font-medium">{row.categoryName}</TableCell>
-                  <TableCell className="text-center">
-                    {row.hasData ? (
-                      <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
-                        <CheckCircle2 className="mr-1 h-3 w-3" />
-                        Added
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-destructive border-destructive bg-red-50 dark:bg-red-950">
-                        <XCircle className="mr-1 h-3 w-3" />
-                        Empty
-                      </Badge>
-                    )}
+                <TableRow key={row.id} className="hover:bg-muted/30 transition-colors">
+                  <TableCell>
+                    <Badge variant="outline" className="font-medium text-xs px-2.5 py-0.5">
+                      {row.segmentName}
+                    </Badge>
                   </TableCell>
+                  <TableCell className="font-medium">{row.categoryName}</TableCell>
+                  {isSuperAdmin && (
+                    <TableCell className="text-center">
+                      {row.hasData ? (
+                        <Badge variant="outline" className="text-green-600 border-green-600 bg-green-50 dark:bg-green-950">
+                          <CheckCircle2 className="mr-1 h-3 w-3" />
+                          Added
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-destructive border-destructive bg-red-50 dark:bg-red-950">
+                          <XCircle className="mr-1 h-3 w-3" />
+                          Empty
+                        </Badge>
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell className="text-center">
                     {countsLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                     ) : (
-                      <Badge variant="secondary">{row.entries}</Badge>
+                      <Badge variant={row.entries > 0 ? "default" : "secondary"} className="font-mono">{row.entries}</Badge>
                     )}
                   </TableCell>
                   {isSuperAdmin && (
@@ -329,16 +365,17 @@ export function ConfigStatusList({
                       size="sm"
                       onClick={() => handleView(row.id, row.categoryName)}
                       disabled={row.entries === 0}
+                      className="gap-1.5 hover:bg-primary/10 hover:text-primary transition-colors"
                     >
-                      <Eye className="mr-1 h-4 w-4" />
-                      View Responses
+                      <Eye className="h-4 w-4" />
+                      View
                     </Button>
                   </TableCell>
                 </TableRow>
               ))}
               {tableControls.filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={isSuperAdmin ? 8 : 5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={colCount} className="text-center py-8 text-muted-foreground">
                     No categories match your search.
                   </TableCell>
                 </TableRow>

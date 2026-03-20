@@ -23,7 +23,7 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle, AlertTriangle, Trophy, Star, TrendingUp } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, Eye, Clock, CheckCircle2, XCircle, AlertTriangle, Trophy, Star, TrendingUp, User, Hash } from "lucide-react";
 import { getFormConfig, ParsedSubmission } from "@/lib/actions";
 import { FormConfig } from "@/lib/types";
 import { useFirestore, useUser } from "@/firebase";
@@ -35,7 +35,10 @@ import { SCORING_PARAMETERS, getSegmentForCategory, ScoringParameter } from "@/l
 import { useTableControls } from "@/hooks/use-table-controls";
 import { TableToolbar } from "@/components/ui/table-toolbar";
 
-type EnrichedSubmission = ParsedSubmission & { status: SubmissionStatus };
+type EnrichedSubmission = ParsedSubmission & {
+    status: SubmissionStatus;
+    spocName?: string;
+};
 
 type JuryScore = {
     submissionId: string;
@@ -77,6 +80,41 @@ const STATUS_BADGE: Record<SubmissionStatus, { label: string; icon: React.ReactN
     },
 };
 
+/**
+ * Extract SPOC name from submission responses using form config question titles.
+ * Matches titles containing "spoc" + "name", or "contact" + "name", or "applicant" + "name".
+ */
+function extractSpocName(responses: Record<string, any>, formConfig: FormConfig | null): string {
+    if (!formConfig) return "";
+    for (const section of formConfig.sections) {
+        for (const q of section.questions) {
+            const lower = q.title.toLowerCase();
+            const isNameField = (
+                (lower.includes("spoc") && lower.includes("name")) ||
+                (lower.includes("contact") && lower.includes("name") && !lower.includes("email") && !lower.includes("phone")) ||
+                (lower.includes("applicant") && lower.includes("name")) ||
+                (lower.includes("nominee") && lower.includes("name")) ||
+                lower === "full name" ||
+                lower === "name of the applicant" ||
+                lower === "name of the nominee" ||
+                lower === "name of the contact person"
+            );
+            if (isNameField && responses[q.id]) {
+                return String(responses[q.id]);
+            }
+        }
+    }
+    // Fallback: first TEXT question that has "name" in the title
+    for (const section of formConfig.sections) {
+        for (const q of section.questions) {
+            if (q.type === "TEXT" && q.title.toLowerCase().includes("name") && responses[q.id]) {
+                return String(responses[q.id]);
+            }
+        }
+    }
+    return "";
+}
+
 // ── Score Breakdown Popover ──────────────────────────────────────────────────
 
 function ScoreBreakdownPopover({
@@ -93,7 +131,6 @@ function ScoreBreakdownPopover({
     const maxTotal = parameters.reduce((a, p) => a + p.maxScore, 0);
     const pct = maxTotal > 0 ? Math.round((score.totalScore / maxTotal) * 100) : 0;
 
-    // Color coding based on percentage
     const pillColor = pct >= 75
         ? "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-700"
         : pct >= 50
@@ -197,7 +234,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
     const [loading, setLoading] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState<EnrichedSubmission | null>(null);
 
-    // Jury scores state (only fetched when showAuditInfo is true = Super Admin)
+    // Jury scores state
     const [juryScores, setJuryScores] = useState<JuryScore[]>([]);
     const [juryNames, setJuryNames] = useState<string[]>([]);
     const [juryDisplayNames, setJuryDisplayNames] = useState<Record<string, string>>({});
@@ -233,6 +270,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                         status: (data.status as SubmissionStatus) ?? "pending",
                         statusUpdatedAt: data.statusUpdatedAt?.toDate?.()?.toISOString?.() || undefined,
                         statusUpdatedBy: data.statusUpdatedBy || undefined,
+                        spocName: extractSpocName(responses, config),
                     };
                 });
                 const filtered = statusFilters ? subs.filter((s) => statusFilters.includes(s.status)) : subs;
@@ -301,11 +339,12 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
     }, [categoryId, firestore, showAuditInfo, statusFilters, useJuryModal, user?.email]);
 
     const tableControls = useTableControls(submissions, {
-        searchFields: ["id", "status"],
+        searchFields: ["id", "status", "spocName"],
         defaultSortKey: "submittedAt",
         defaultSortDirection: "desc",
         getSortValue: (item, key) => {
             if (key === "submittedAt") return new Date(item.submittedAt || 0).getTime();
+            if (key === "spocName") return item.spocName || "";
             return (item as any)[key] ?? "";
         }
     });
@@ -334,7 +373,6 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
 
         const stats: Record<string, { avg: number; rank: number }> = {};
 
-        // Compute average for each submission
         const avgEntries: { id: string; avg: number }[] = [];
         submissions.forEach((sub) => {
             const subScores = juryScores.filter((s) => s.submissionId === sub.id);
@@ -346,10 +384,8 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
             }
         });
 
-        // Sort by avg descending for rank
         const sorted = [...avgEntries].sort((a, b) => b.avg - a.avg);
         sorted.forEach((entry, idx) => {
-            // Handle ties: same rank for same score
             const rank = idx === 0 ? 1 : (entry.avg === sorted[idx - 1].avg ? stats[sorted[idx - 1].id].rank : idx + 1);
             stats[entry.id] = { avg: entry.avg, rank: entry.avg > 0 ? rank : 0 };
         });
@@ -371,9 +407,9 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-4">
-                <Button variant="outline" size="sm" onClick={onBack}>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Status
+                <Button variant="outline" size="sm" onClick={onBack} className="gap-2">
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
                 </Button>
                 <div>
                     <h2 className="text-xl font-bold font-headline">{categoryName}</h2>
@@ -393,7 +429,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                     </CardContent>
                 </Card>
             ) : (
-                <Card>
+                <Card className="shadow-sm border-border/60">
                     <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-lg">Submissions</CardTitle>
@@ -409,26 +445,39 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                         <TableToolbar
                             search={tableControls.search}
                             onSearchChange={tableControls.setSearch}
-                            searchPlaceholder="Search by ID..."
+                            searchPlaceholder="Search by name, ID, or status..."
                             totalCount={tableControls.totalCount}
                             filteredCount={tableControls.filteredCount}
                             filterOptions={[{ key: "status", label: "Status", options: statusOptions }]}
                             filters={tableControls.filters}
                             onFilterChange={tableControls.setFilter}
                             sortOptions={[
-                                { key: "submittedAt", label: "Date" }
+                                { key: "submittedAt", label: "Date" },
+                                { key: "spocName", label: "Name" },
                             ]}
                             sort={tableControls.sort}
                             onSortToggle={tableControls.toggleSort}
                         />
-                        <div className="border rounded-md overflow-x-auto">
+                        <div className="border rounded-lg overflow-x-auto">
                             <Table>
                                 <TableHeader>
-                                    <TableRow>
-                                        <TableHead className="w-[50px]">#</TableHead>
-                                        <TableHead className="w-[80px]">View</TableHead>
-                                        <TableHead className="w-[170px]">Submitted At</TableHead>
-                                        <TableHead className="w-[130px]">Status</TableHead>
+                                    <TableRow className="bg-muted/40">
+                                        <TableHead className="w-[50px] font-semibold">#</TableHead>
+                                        <TableHead className="w-[110px] font-semibold">
+                                            <div className="flex items-center gap-1.5">
+                                                <Hash className="h-3 w-3" />
+                                                App ID
+                                            </div>
+                                        </TableHead>
+                                        <TableHead className="min-w-[160px] font-semibold">
+                                            <div className="flex items-center gap-1.5">
+                                                <User className="h-3 w-3" />
+                                                SPOC Name
+                                            </div>
+                                        </TableHead>
+                                        <TableHead className="w-[80px] font-semibold">View</TableHead>
+                                        <TableHead className="w-[150px] font-semibold">Submitted</TableHead>
+                                        <TableHead className="w-[130px] font-semibold">Status</TableHead>
                                         {hasJuryData && juryNames.map((email) => (
                                             <TableHead key={email} className="text-center min-w-[100px]">
                                                 <div className="flex flex-col items-center gap-0.5">
@@ -439,7 +488,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                             </TableHead>
                                         ))}
                                         {showAvgAndRank && (
-                                            <TableHead className="text-center min-w-[80px]">
+                                            <TableHead className="text-center min-w-[80px] font-semibold">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <TrendingUp className="h-3 w-3" />
                                                     Avg
@@ -447,7 +496,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                             </TableHead>
                                         )}
                                         {showAvgAndRank && (
-                                            <TableHead className="text-center min-w-[70px]">
+                                            <TableHead className="text-center min-w-[70px] font-semibold">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <Trophy className="h-3 w-3" />
                                                     Rank
@@ -460,30 +509,42 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                     {tableControls.filtered.map((sub, idx) => {
                                         const statusCfg = STATUS_BADGE[sub.status];
                                         const stats = submissionStats[sub.id];
+                                        const appId = sub.id.slice(-6).toUpperCase();
+
                                         return (
-                                            <TableRow key={sub.id}>
-                                                <TableCell className="font-mono text-muted-foreground">
+                                            <TableRow key={sub.id} className="hover:bg-muted/30 transition-colors">
+                                                <TableCell className="font-mono text-muted-foreground text-xs">
                                                     {idx + 1}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <code className="text-xs font-mono bg-muted/60 px-2 py-0.5 rounded text-foreground">
+                                                        {appId}
+                                                    </code>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {sub.spocName ? (
+                                                        <span className="font-medium text-sm">{sub.spocName}</span>
+                                                    ) : (
+                                                        <span className="text-xs text-muted-foreground italic">—</span>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
-                                                        className="gap-1.5"
+                                                        className="gap-1.5 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
                                                         onClick={() => setSelectedSubmission(sub)}
                                                     >
                                                         <Eye className="h-3.5 w-3.5" />
                                                         View
                                                     </Button>
                                                 </TableCell>
-                                                <TableCell className="text-sm whitespace-nowrap">
+                                                <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
                                                     {sub.submittedAt
                                                         ? new Date(sub.submittedAt).toLocaleDateString("en-IN", {
                                                             day: "2-digit",
                                                             month: "short",
                                                             year: "numeric",
-                                                            hour: "2-digit",
-                                                            minute: "2-digit",
                                                         })
                                                         : "—"}
                                                 </TableCell>
@@ -541,8 +602,8 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                     })}
                                     {tableControls.filtered.length === 0 && (
                                         <TableRow>
-                                            <TableCell colSpan={4 + (hasJuryData ? (showAuditInfo ? 2 + juryNames.length : juryNames.length) : 0)} className="h-24 text-center text-muted-foreground">
-                                                No submissions match your search/filters.
+                                            <TableCell colSpan={6 + (hasJuryData ? (showAuditInfo ? 2 + juryNames.length : juryNames.length) : 0)} className="h-24 text-center text-muted-foreground">
+                                                No submissions match your search or filters.
                                             </TableCell>
                                         </TableRow>
                                     )}

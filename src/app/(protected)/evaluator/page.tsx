@@ -28,7 +28,7 @@ export default function EvaluatorPage() {
                     Review all submissions and update their status.
                 </p>
             </div>
-            <ConfigStatusList onViewCategory={(id, name) => setViewing({ id, name })} />
+            <ConfigStatusList onViewCategory={(id, name) => setViewing({ id, name })} role="evaluator" />
         </div>
     );
 }

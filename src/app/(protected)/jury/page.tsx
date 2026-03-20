@@ -68,6 +68,7 @@ export default function JuryPage() {
                 onViewCategory={(id, name) => setViewing({ id, name })}
                 statusFilters={["approved", "issues"]}
                 assignedCategories={assignedCategories ?? []}
+                role="jury"
             />
         </div>
     );
