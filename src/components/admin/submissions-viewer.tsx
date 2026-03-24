@@ -117,6 +117,8 @@ function extractSpocName(responses: Record<string, any>, formConfig: FormConfig 
 
 // ── Score Breakdown Popover ──────────────────────────────────────────────────
 
+const DISPLAY_MAX = 10;
+
 function ScoreBreakdownPopover({
     score,
     juryEmail,
@@ -129,6 +131,7 @@ function ScoreBreakdownPopover({
     parameters: ScoringParameter[];
 }) {
     const maxTotal = parameters.reduce((a, p) => a + p.maxScore, 0);
+    const scaledScore = maxTotal > 0 ? (score.totalScore / maxTotal) * DISPLAY_MAX : 0;
     const pct = maxTotal > 0 ? Math.round((score.totalScore / maxTotal) * 100) : 0;
 
     const pillColor = pct >= 75
@@ -146,8 +149,8 @@ function ScoreBreakdownPopover({
                         pillColor
                     )}
                 >
-                    {score.totalScore}
-                    <span className="text-[10px] opacity-60">/{maxTotal}</span>
+                    {scaledScore.toFixed(1)}
+                    <span className="text-[10px] opacity-60">/{DISPLAY_MAX}</span>
                 </button>
             </PopoverTrigger>
             <PopoverContent className="w-72 p-0" align="center" side="bottom">
@@ -184,7 +187,7 @@ function ScoreBreakdownPopover({
                 <div className="px-4 py-2.5 flex items-center justify-between bg-muted/30">
                     <span className="text-xs font-medium">Total</span>
                     <span className="text-sm font-bold font-mono">
-                        {score.totalScore}<span className="text-xs text-muted-foreground">/{maxTotal}</span>
+                        {scaledScore.toFixed(1)}<span className="text-xs text-muted-foreground">/{DISPLAY_MAX}</span>
                     </span>
                 </div>
             </PopoverContent>
@@ -377,8 +380,10 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
         submissions.forEach((sub) => {
             const subScores = juryScores.filter((s) => s.submissionId === sub.id);
             if (subScores.length > 0) {
-                const avg = Math.round(subScores.reduce((a, s) => a + s.totalScore, 0) / subScores.length * 10) / 10;
-                avgEntries.push({ id: sub.id, avg });
+                const rawAvg = subScores.reduce((a, s) => a + s.totalScore, 0) / subScores.length;
+                // Scale from /40 to /10
+                const scaledAvg = maxTotal > 0 ? Math.round((rawAvg / maxTotal) * DISPLAY_MAX * 10) / 10 : 0;
+                avgEntries.push({ id: sub.id, avg: scaledAvg });
             } else {
                 avgEntries.push({ id: sub.id, avg: 0 });
             }
@@ -391,7 +396,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
         });
 
         return stats;
-    }, [submissions, juryScores, juryNames, showAuditInfo]);
+    }, [submissions, juryScores, juryNames, showAuditInfo, maxTotal]);
 
     const hasJuryData = juryNames.length > 0;
     const showAvgAndRank = showAuditInfo && hasJuryData;
@@ -581,7 +586,7 @@ export function SubmissionsViewer({ categoryId, categoryName, onBack, showAuditI
                                                         {stats && stats.avg > 0 ? (
                                                             <span className="font-mono font-bold text-sm">
                                                                 {stats.avg}
-                                                                <span className="text-[10px] text-muted-foreground">/{maxTotal}</span>
+                                                                <span className="text-[10px] text-muted-foreground">/{DISPLAY_MAX}</span>
                                                             </span>
                                                         ) : (
                                                             <span className="text-xs text-muted-foreground">—</span>
