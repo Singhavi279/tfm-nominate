@@ -2,5 +2,11 @@
     "framework": "nextjs",
     "buildCommand": "npm run build",
     "installCommand": "npm install",
-    "outputDirectory": ".next"
+    "outputDirectory": ".next",
+    "rewrites": [
+        {
+            "source": "/__/auth/:path*",
+            "destination": "https://studio-9085921874-cd434.firebaseapp.com/__/auth/:path*"
+        }
+    ]
 }
