@@ -1,7 +1,7 @@
-export const SUPER_ADMIN_EMAILS = ["t20avnish@gmail.com", "sagun.kumari@timesinternet.in"];
-
-// Kept for backward compat (used in a few UI checks)
-export const ADMIN_EMAIL = SUPER_ADMIN_EMAILS[0];
-export const ADMIN_EMAILS = SUPER_ADMIN_EMAILS;
+// Super admin status is NOT hardcoded here. The single source of truth is
+// Firestore: firestore.rules' isSuperAdmin() (bootstrap emails) and the
+// user_roles/{email} collection's "role: super_admin" field. Client code
+// determines admin status by reading that same collection — see
+// src/firebase/use-user-role.tsx.
 
 export type UserRole = "super_admin" | "evaluator" | "jury" | "user";

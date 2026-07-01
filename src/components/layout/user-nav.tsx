@@ -11,29 +11,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useUser, useAuth, useFirestore } from "@/firebase";
+import { useUser, useAuth, useUserRole } from "@/firebase";
 import { signOut } from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
-import { SUPER_ADMIN_EMAILS } from "@/lib/auth";
-import { useEffect, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
 
 export function UserNav() {
   const { user } = useUser();
   const auth = useAuth();
-  const firestore = useFirestore();
   const router = useRouter();
-  const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(user?.email ?? "");
-  const [role, setRole] = useState<"evaluator" | "jury" | null>(null);
-
-  useEffect(() => {
-    if (!user?.email || isSuperAdmin) { setRole(null); return; }
-    getDoc(doc(firestore, "user_roles", user.email))
-      .then((snap) => { if (snap.exists()) setRole(snap.data().role); })
-      .catch(() => { });
-  }, [user?.email, isSuperAdmin, firestore]);
+  const { role, isSuperAdmin } = useUserRole();
 
   const handleSignOut = async () => {
     await signOut(auth);

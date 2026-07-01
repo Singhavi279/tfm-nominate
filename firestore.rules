@@ -20,11 +20,18 @@ service cloud.firestore {
       return isOwner(userId) && resource != null;
     }
 
-    /** Super admins — hardcoded email list. */
+    /**
+     * Super admins — SOLE source of truth for this app.
+     * Hardcoded bootstrap emails here (only), plus anyone granted the
+     * "super_admin" role via the user_roles collection (managed by an
+     * existing super admin). Do not hardcode admin emails anywhere else
+     * (client code reads role from Firestore instead).
+     */
     function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.token.email == "t20avnish@gmail.com" ||
-        request.auth.token.email == "sagun.kumari@timesinternet.in"
+        request.auth.token.email == "sagun.kumari@timesinternet.in" ||
+        getUserRole() == "super_admin"
       );
     }
 

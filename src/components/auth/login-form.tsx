@@ -33,12 +33,10 @@ import { getFirestore } from "firebase/firestore";
 import { getApp } from "firebase/app";
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, User as FirebaseUser } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { SUPER_ADMIN_EMAILS } from "@/lib/auth";
 
 async function getRedirectPath(authUser: FirebaseUser): Promise<string> {
   const email = authUser.email;
   if (!email) return "/dashboard";
-  if (SUPER_ADMIN_EMAILS.includes(email)) return "/admin/upload";
   try {
     const db = getFirestore(getApp());
     const snap = await getDoc(doc(db, "user_roles", email));
@@ -49,6 +47,7 @@ async function getRedirectPath(authUser: FirebaseUser): Promise<string> {
       if (snap.data().displayName !== displayName) {
         updateDoc(doc(db, "user_roles", email), { displayName }).catch(() => { });
       }
+      if (role === "super_admin") return "/admin/upload";
       if (role === "evaluator") return "/evaluator";
       if (role === "jury") return "/jury";
     }

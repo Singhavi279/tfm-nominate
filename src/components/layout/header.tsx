@@ -4,26 +4,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { UserNav } from './user-nav';
 import { Button } from '../ui/button';
-import { useUser, useFirestore } from '@/firebase';
-import { SUPER_ADMIN_EMAILS } from '@/lib/auth';
-import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { useUser, useUserRole } from '@/firebase';
 
 export function Header() {
   const { user } = useUser();
-  const firestore = useFirestore();
-  const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(user?.email ?? "");
-  const [role, setRole] = useState<"evaluator" | "jury" | null>(null);
-
-  useEffect(() => {
-    if (!user?.email || isSuperAdmin) { setRole(null); return; }
-    getDoc(doc(firestore, "user_roles", user.email))
-      .then((snap) => {
-        if (snap.exists()) setRole(snap.data().role as "evaluator" | "jury");
-        else setRole(null);
-      })
-      .catch(() => setRole(null));
-  }, [user?.email, isSuperAdmin, firestore]);
+  const { role, isSuperAdmin } = useUserRole();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">

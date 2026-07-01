@@ -7,13 +7,12 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { ArrowRight, FileText, Loader2 } from "lucide-react";
 import { SEGMENT_ORDER, CATEGORY_ORDER } from "@/lib/award-categories";
-import { useUser, useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { ADMIN_EMAILS } from "@/lib/auth";
+import { useUser, useFirestore, useCollection, useMemoFirebase, useUserRole } from "@/firebase";
 import { collection } from "firebase/firestore";
 
 export function CategoryList() {
   const { user } = useUser();
-  const isAdmin = ADMIN_EMAILS.includes(user?.email ?? "");
+  const { isSuperAdmin: isAdmin } = useUserRole();
   const firestore = useFirestore();
 
   const formConfigsQuery = useMemoFirebase(() => {

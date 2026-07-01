@@ -1,9 +1,11 @@
+const trim = (value?: string) => value?.trim();
+
 export const firebaseConfig = {
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  projectId: trim(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID),
+  appId: trim(process.env.NEXT_PUBLIC_FIREBASE_APP_ID),
+  apiKey: trim(process.env.NEXT_PUBLIC_FIREBASE_API_KEY),
+  authDomain: trim(process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN),
+  measurementId: trim(process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID),
+  messagingSenderId: trim(process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID),
+  storageBucket: trim(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET),
 };
